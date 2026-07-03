@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sunday Lineup — Tennis Availability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --court-navy: #142B3D;
+    --court-navy-deep: #0B1B28;
+    --panel: #1B3A50;
+    --ball-yellow: #D7F23C;
+    --ball-yellow-dim: #A9C22C;
+    --chalk: #F2F5F0;
+    --clay: #C1502B;
+    --clay-dim: #8F3C20;
+    --net-gray: #8CA0AF;
+    --line: rgba(242,245,240,0.14);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--court-navy);
+    color: var(--chalk);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+
+  .header {
+    background: var(--court-navy-deep);
+    border-bottom: 2px solid var(--line);
+    padding: 28px 20px 22px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: "";
+    position: absolute;
+    top: -60%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140%;
+    height: 220%;
+    border: 2px solid var(--line);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--ball-yellow);
+    position: relative;
+  }
+
+  h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: clamp(28px, 6vw, 42px);
+    margin: 6px 0 4px;
+    letter-spacing: -0.01em;
+    position: relative;
+  }
+
+  .week-range {
+    color: var(--net-gray);
+    font-size: 14px;
+    font-family: 'Space Mono', monospace;
+    position: relative;
+  }
+
+  .admin-pill {
+    display: inline-block;
+    margin-top: 10px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    background: var(--clay);
+    color: var(--chalk);
+    padding: 3px 10px;
+    border-radius: 100px;
+    position: relative;
+  }
+
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 28px 16px 0;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 24px;
+  }
+
+  .card.admin-card {
+    border-color: var(--clay-dim);
+  }
+
+  .card h2 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card h2 .tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    background: var(--ball-yellow);
+    color: var(--court-navy-deep);
+    padding: 3px 8px;
+    border-radius: 100px;
+    letter-spacing: 0.05em;
+  }
+
+  .card h2 .tag.admin {
+    background: var(--clay);
+    color: var(--chalk);
+  }
+
+  label.field-label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--net-gray);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  input[type="text"], textarea, select {
+    width: 100%;
+    background: var(--court-navy-deep);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--chalk);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    margin-bottom: 18px;
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ball-yellow) 50%), linear-gradient(135deg, var(--ball-yellow) 50%, transparent 50%);
+    background-position: calc(100% - 20px) center, calc(100% - 15px) center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    cursor: pointer;
+  }
+
+  select option { background: var(--court-navy-deep); color: var(--chalk); }
+
+  input[type="text"]:focus, textarea:focus, select:focus, button:focus-visible, .day-chip:focus-visible {
+    outline: 2px solid var(--ball-yellow);
+    outline-offset: 2px;
+  }
+
+  textarea { resize: vertical; min-height: 54px; }
+
+  .day-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .day-chip {
+    background: var(--court-navy-deep);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 4px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--chalk);
+    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .day-chip:hover { border-color: var(--ball-yellow-dim); }
+
+  .day-chip .dow {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--net-gray);
+    display: block;
+  }
+
+  .day-chip .dnum {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .day-chip.selected {
+    background: var(--ball-yellow);
+    border-color: var(--ball-yellow);
+    transform: translateY(-2px);
+  }
+
+  .day-chip.selected .dow, .day-chip.selected .dnum { color: var(--court-navy-deep); }
+
+  .day-chip.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .day-chip.closed-chip {
+    opacity: 1;
+    pointer-events: none;
+    background: repeating-linear-gradient(45deg, var(--court-navy-deep), var(--court-navy-deep) 4px, #1f2f3a 4px, #1f2f3a 8px);
+    border-color: var(--clay-dim);
+  }
+  .day-chip.closed-chip .dow, .day-chip.closed-chip .dnum { color: var(--clay); }
+
+  .day-chip.admin-select.selected {
+    background: var(--clay);
+    border-color: var(--clay);
+  }
+  .day-chip.admin-select.selected .dow, .day-chip.admin-select.selected .dnum { color: var(--chalk); }
+
+  .out-toggle {
+    display: block;
+    width: 100%;
+    background: var(--court-navy-deep);
+    border: 1px solid var(--line);
+    color: var(--net-gray);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 18px;
+    transition: all 0.15s ease;
+  }
+  .out-toggle:hover { border-color: var(--clay-dim); }
+  .out-toggle.active {
+    background: var(--clay);
+    border-color: var(--clay);
+    color: var(--chalk);
+    font-weight: 700;
+  }
+
+  .out-badge {
+    display: inline-block;
+    margin-left: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: var(--clay);
+    border: 1px solid var(--clay);
+    border-radius: 4px;
+    padding: 1px 5px;
+    vertical-align: middle;
+  }
+  tr.is-out { opacity: 0.55; }
+
+  button.primary {
+    background: var(--ball-yellow);
+    color: var(--court-navy-deep);
+    border: none;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 14px;
+    padding: 13px 22px;
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    letter-spacing: 0.02em;
+    transition: transform 0.1s ease;
+  }
+  button.primary:active { transform: scale(0.98); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  button.admin-btn {
+    background: var(--clay);
+    color: var(--chalk);
+  }
+
+  .status-msg {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--ball-yellow);
+    font-family: 'Space Mono', monospace;
+    min-height: 16px;
+  }
+  .status-msg.admin-status { color: var(--clay); }
+
+  /* Scoreboard grid */
+  .scoreboard-scroll { overflow-x: auto; }
+  table.scoreboard {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 680px;
+  }
+  table.scoreboard th, table.scoreboard td {
+    padding: 10px 6px;
+    text-align: center;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  table.scoreboard th.name-col, table.scoreboard td.name-col {
+    text-align: left;
+    padding-left: 4px;
+    min-width: 120px;
+  }
+  table.scoreboard th {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--net-gray);
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  .mark-yes { color: var(--ball-yellow); font-size: 16px; }
+  .mark-no { color: var(--net-gray); opacity: 0.4; font-size: 16px; }
+  .mark-closed { color: var(--clay); font-size: 11px; font-family: 'Space Mono', monospace; }
+  .note-cell { font-size: 11px; color: var(--net-gray); font-style: italic; max-width: 160px; }
+
+  .stamp-row td { border-bottom: none; padding-top: 16px; }
+  .stamp {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 5px 9px;
+    border-radius: 5px;
+    border: 2px solid currentColor;
+    transform: rotate(-4deg);
+  }
+  .stamp.in { color: var(--ball-yellow); }
+  .stamp.out { color: var(--clay); border-color: var(--clay); }
+  .stamp.closed { color: var(--net-gray); border-color: var(--net-gray); }
+  .count-sub { display: block; margin-top: 4px; font-size: 10px; color: var(--net-gray); font-family: 'Space Mono', monospace; }
+
+  .empty-state {
+    text-align: center;
+    color: var(--net-gray);
+    padding: 30px 10px;
+    font-size: 14px;
+  }
+
+  .best-banner {
+    background: var(--court-navy-deep);
+    border: 1px solid var(--ball-yellow-dim);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .best-banner .ball {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--ball-yellow);
+    flex-shrink: 0;
+    position: relative;
+    margin-top: 2px;
+  }
+  .best-banner .ball::after {
+    content: "";
+    position: absolute; inset: 3px;
+    border: 1.5px solid var(--court-navy-deep);
+    border-radius: 50%;
+    clip-path: inset(0 0 50% 0);
+  }
+  .best-banner .txt-main { font-family: 'Archivo Black', sans-serif; font-size: 15px; }
+  .best-banner .txt-sub { color: var(--net-gray); font-size: 12px; margin-top: 2px; }
+
+  .footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  .link-btn {
+    background: none;
+    border: none;
+    color: var(--net-gray);
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+  }
+  .link-btn:hover { color: var(--clay); }
+
+  @media (max-width: 520px) {
+    .day-grid { gap: 5px; }
+    .day-chip { padding: 8px 2px; }
+    .day-chip .dnum { font-size: 15px; }
+    table.scoreboard { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="eyebrow">The Court List</div>
+  <h1>Sunday Lineup</h1>
+  <div class="week-range" id="weekRange">—</div>
+  <div id="adminPillSlot"></div>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>Your availability <span class="tag">1 court · need 4</span></h2>
+    <label class="field-label" for="nameInput">Your name</label>
+    <select id="nameInput">
+      <option value="" disabled selected>Choose your name…</option>
+    </select>
+
+    <label class="field-label">Days you can play this week</label>
+    <div class="day-grid" id="dayGrid"></div>
+    <button type="button" class="out-toggle" id="outToggle">I'm out this week</button>
+
+    <label class="field-label" for="noteInput">Notes (optional)</label>
+    <textarea id="noteInput" placeholder="e.g. only after 6pm, can sub last minute"></textarea>
+
+    <label class="field-label" for="maxStreakInput">Max days in a row (optional)</label>
+    <input type="text" inputmode="numeric" id="maxStreakInput" placeholder="e.g. 2 — leave blank for no limit">
+
+    <label class="field-label" for="maxWeeklyInput">Max days to play this week (optional)</label>
+    <input type="text" inputmode="numeric" id="maxWeeklyInput" placeholder="e.g. 3 — even if you marked more days available">
+
+    <button class="primary" id="submitBtn">Save my availability</button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>This week's board</h2>
+    <div id="bestBannerSlot"></div>
+    <div class="scoreboard-scroll">
+      <table class="scoreboard" id="scoreboard">
+        <thead><tr id="theadRow"></tr></thead>
+        <tbody id="tbody"></tbody>
+        <tfoot>
+          <tr id="countRow"></tr>
+          <tr class="stamp-row" id="stampRow"></tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="empty-state" id="emptyState" style="display:none;">No responses yet this week. Be the first to send yours in above.</div>
+  </div>
+
+  <div id="adminCardSlot"></div>
+
+</div>
+
+<script>
+(function() {
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const PLAYERS = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
+  const API_URL = '/api/availability';
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const adminKey = urlParams.get('admin');
+  const isAdmin = !!adminKey;
+
+  function getWeekStart() {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const day = today.getDay();
+    const start = new Date(today);
+    start.setDate(today.getDate() - day);
+    return start;
+  }
+
+  function isoDate(d) {
+    return d.toISOString().slice(0,10);
+  }
+
+  const weekStart = getWeekStart();
+  const weekDays = [];
+  for (let i = 1; i <= 5; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    weekDays.push(d);
+  }
+  const weekKey = isoDate(weekStart);
+
+  function fmtRange() {
+    const opts = { month: 'short', day: 'numeric' };
+    return weekDays[0].toLocaleDateString(undefined, opts) + ' – ' + weekDays[weekDays.length - 1].toLocaleDateString(undefined, opts);
+  }
+  document.getElementById('weekRange').textContent = fmtRange();
+
+  if (isAdmin) {
+    document.getElementById('adminPillSlot').innerHTML = '<div class="admin-pill">ADMIN MODE</div>';
+  }
+
+  const nameSelect = document.getElementById('nameInput');
+  PLAYERS.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    nameSelect.appendChild(opt);
+  });
+
+  let closedDays = [];
+
+  // Build day picker
+  const dayGrid = document.getElementById('dayGrid');
+  const selected = new Set();
+  const dayChips = [];
+  weekDays.forEach((d, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'day-chip';
+    chip.tabIndex = 0;
+    chip.setAttribute('role', 'checkbox');
+    chip.setAttribute('aria-checked', 'false');
+    chip.innerHTML = `<span class="dow">${DOW[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>`;
+    chip.addEventListener('click', () => toggleDay(idx, chip));
+    chip.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDay(idx, chip); }
+    });
+    dayGrid.appendChild(chip);
+    dayChips.push(chip);
+  });
+
+  function toggleDay(idx, chip) {
+    if (isOut || closedDays.includes(idx)) return;
+    if (selected.has(idx)) {
+      selected.delete(idx);
+      chip.classList.remove('selected');
+      chip.setAttribute('aria-checked', 'false');
+    } else {
+      selected.add(idx);
+      chip.classList.add('selected');
+      chip.setAttribute('aria-checked', 'true');
+    }
+  }
+
+  function applyClosedDaysToPicker() {
+    dayChips.forEach((chip, idx) => {
+      const closed = closedDays.includes(idx);
+      chip.classList.toggle('closed-chip', closed);
+      if (closed) {
+        selected.delete(idx);
+        chip.classList.remove('selected');
+        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">CLOSED</span>`;
+      } else {
+        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${weekDays[idx].getDate()}</span>`;
+      }
+    });
+  }
+
+  let isOut = false;
+  const outToggleBtn = document.getElementById('outToggle');
+  const maxStreakInput = document.getElementById('maxStreakInput');
+  const maxWeeklyInput = document.getElementById('maxWeeklyInput');
+  outToggleBtn.addEventListener('click', () => {
+    isOut = !isOut;
+    outToggleBtn.classList.toggle('active', isOut);
+    outToggleBtn.textContent = isOut ? "I'm out this week ✕" : "I'm out this week";
+    maxStreakInput.disabled = isOut;
+    maxWeeklyInput.disabled = isOut;
+    if (isOut) { maxStreakInput.value = ''; maxWeeklyInput.value = ''; }
+    dayChips.forEach((chip, idx) => {
+      chip.classList.toggle('disabled', isOut);
+      if (isOut) {
+        selected.delete(idx);
+        chip.classList.remove('selected');
+        chip.setAttribute('aria-checked', 'false');
+      }
+    });
+  });
+
+  // Table headers
+  const theadRow = document.getElementById('theadRow');
+  theadRow.innerHTML = '<th class="name-col">Player</th>' +
+    weekDays.map(d => `<th>${DOW[d.getDay()]}<br>${d.getMonth()+1}/${d.getDate()}</th>`).join('') +
+    '<th>Notes</th>';
+
+  async function saveResponse(name, days, note, out, maxStreak, maxWeekly) {
+    const params = new URLSearchParams({
+      action: 'save',
+      week: weekKey,
+      name: name.trim(),
+      days: out ? '' : Array.from(days).join(','),
+      note: note.trim(),
+      out: out ? 'true' : 'false',
+      maxstreak: maxStreak ? String(maxStreak) : '',
+      maxweekly: maxWeekly ? String(maxWeekly) : ''
+    });
+    let res, text;
+    try {
+      res = await fetch(`${API_URL}?${params.toString()}`);
+      text = await res.text();
+    } catch (e) {
+      throw new Error('Network request failed — check your connection.');
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error('Backend returned an unexpected response: ' + text.slice(0, 100));
+    }
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+  }
+
+  async function loadData() {
+    const params = new URLSearchParams({ action: 'list', week: weekKey });
+    try {
+      const res = await fetch(`${API_URL}?${params.toString()}`);
+      if (!res.ok) return { responses: [], closedDays: [] };
+      const data = await res.json();
+      return { responses: data.responses || [], closedDays: data.closedDays || [] };
+    } catch (e) {
+      return { responses: [], closedDays: [] };
+    }
+  }
+
+  async function clearAllResponses() {
+    const params = new URLSearchParams({ action: 'clear', week: weekKey, key: adminKey });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Clear failed');
+  }
+
+  async function saveClosedDays(days) {
+    const params = new URLSearchParams({ action: 'setClosed', week: weekKey, key: adminKey, closedDays: days.join(',') });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  function slugSafe(name) {
+    return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function assignFairly(responses) {
+    const playCount = {};
+    const currentStreak = {};
+    const lastPlayedIdx = {};
+    responses.forEach(r => {
+      playCount[r.name] = 0;
+      currentStreak[r.name] = 0;
+      lastPlayedIdx[r.name] = -99;
+    });
+
+    const dayPlans = weekDays.map((d, idx) => {
+      if (closedDays.includes(idx)) {
+        return { idx, closed: true, available: [], playing: [], alternates: [], forcedOverride: [] };
+      }
+
+      const available = responses.filter(r => r.days.includes(idx));
+      if (available.length === 0) {
+        return { idx, closed: false, available, playing: [], alternates: [], forcedOverride: [] };
+      }
+
+      const wouldExceed = (r) => {
+        const streakCap = r.maxstreak;
+        const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+        const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
+
+        const weeklyCap = r.maxweekly;
+        const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
+
+        return streakExceeded || weeklyExceeded;
+      };
+
+      const eligible = available.filter(r => !wouldExceed(r));
+      const cappedOut = available.filter(r => wouldExceed(r));
+
+      const byFairness = (a, b) => {
+        const diff = playCount[a.name] - playCount[b.name];
+        if (diff !== 0) return diff;
+        return Math.random() - 0.5;
+      };
+
+      let playing = [...eligible].sort(byFairness).slice(0, 4);
+      let forcedOverride = [];
+      if (playing.length < 4 && cappedOut.length > 0) {
+        const need = 4 - playing.length;
+        const forced = [...cappedOut].sort(byFairness).slice(0, need);
+        forcedOverride = forced;
+        playing = playing.concat(forced);
+      }
+
+      const alternates = available.filter(r => !playing.includes(r));
+
+      available.forEach(r => {
+        if (playing.includes(r)) {
+          currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          lastPlayedIdx[r.name] = idx;
+          playCount[r.name]++;
+        }
+      });
+
+      return { idx, closed: false, available, playing, alternates, forcedOverride };
+    });
+
+    return dayPlans;
+  }
+
+  function renderBoard(responses) {
+    const tbody = document.getElementById('tbody');
+    const countRow = document.getElementById('countRow');
+    const stampRow = document.getElementById('stampRow');
+    const emptyState = document.getElementById('emptyState');
+    const scoreboard = document.getElementById('scoreboard');
+    const bestBannerSlot = document.getElementById('bestBannerSlot');
+
+    if (responses.length === 0 && closedDays.length === 0) {
+      scoreboard.style.display = 'none';
+      emptyState.style.display = 'block';
+      bestBannerSlot.innerHTML = '';
+      return;
+    }
+    scoreboard.style.display = 'table';
+    emptyState.style.display = 'none';
+
+    tbody.innerHTML = responses.map(r => {
+      const cells = weekDays.map((d, idx) => {
+        if (closedDays.includes(idx)) return '<td><span class="mark-closed">CLOSED</span></td>';
+        const has = r.days.includes(idx);
+        return `<td>${has ? '<span class="mark-yes">●</span>' : '<span class="mark-no">—</span>'}</td>`;
+      }).join('');
+      const nameCell = r.out
+        ? `${escapeHtml(r.name)}<span class="out-badge">OUT</span>`
+        : escapeHtml(r.name);
+      return `<tr class="${r.out ? 'is-out' : ''}"><td class="name-col">${nameCell}</td>${cells}<td class="note-cell">${escapeHtml(r.note || '')}</td></tr>`;
+    }).join('');
+
+    const counts = weekDays.map((d, idx) => closedDays.includes(idx) ? 0 : responses.filter(r => r.days.includes(idx)).length);
+
+    countRow.innerHTML = '<td class="name-col" style="font-family:\'Space Mono\',monospace;font-size:11px;color:var(--net-gray);">Available</td>' +
+      weekDays.map((d, idx) => closedDays.includes(idx)
+        ? `<td style="font-family:'Space Mono',monospace;color:var(--net-gray);">—</td>`
+        : `<td style="font-family:'Space Mono',monospace;font-weight:700;">${counts[idx]}</td>`
+      ).join('') + '<td></td>';
+
+    const dayPlans = assignFairly(responses);
+
+    stampRow.innerHTML = '<td class="name-col"></td>' +
+      dayPlans.map(plan => {
+        if (plan.closed) {
+          return `<td><span class="stamp closed">CLOSED</span><span class="count-sub">club closed</span></td>`;
+        }
+        const c = plan.available.length;
+        const ok = c >= 4;
+        let sub = `${c} of ${responses.length}`;
+        if (ok && plan.alternates.length > 0) {
+          sub = 'sits out: ' + plan.alternates.map(r => r.name).join(', ');
+        }
+        return `<td><span class="stamp ${ok ? 'in' : 'out'}">${ok ? 'IN' : 'OUT'}</span><span class="count-sub">${escapeHtml(sub)}</span></td>`;
+      }).join('') + '<td></td>';
+
+    const playCountTotal = {};
+    responses.forEach(r => { playCountTotal[r.name] = 0; });
+    dayPlans.forEach(plan => plan.playing.forEach(r => { playCountTotal[r.name]++; }));
+
+    const dayLines = dayPlans.map(plan => {
+      const d = weekDays[plan.idx];
+      const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      if (plan.closed) {
+        return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
+      }
+      if (plan.available.length === 0) {
+        return `<div class="txt-sub">${dateLabel}: no one available</div>`;
+      }
+      if (plan.available.length < 4) {
+        return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
+      }
+      const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
+      const overrideNote = plan.forcedOverride && plan.forcedOverride.length > 0
+        ? ` <span style="color:var(--clay)">(needed to exceed their day limit for: ${escapeHtml(plan.forcedOverride.map(r => r.name).join(', '))})</span>`
+        : '';
+      return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel}:</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${overrideNote}</div>`;
+    }).join('');
+
+    const anyPlayableDay = dayPlans.some(p => !p.closed && p.available.length >= 4);
+    const balanceNote = anyPlayableDay
+      ? `Games this week — ${Object.entries(playCountTotal).map(([n, c]) => `${escapeHtml(n)}: ${c}`).join(' · ')}`
+      : 'No day has 4 people yet — need more responses to fill the court.';
+
+    bestBannerSlot.innerHTML = `<div class="best-banner">
+        <div class="ball"></div>
+        <div>
+          <div class="txt-main">This week's lineup</div>
+          ${dayLines}
+          <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
+        </div>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  async function refresh() {
+    const data = await loadData();
+    closedDays = data.closedDays;
+    applyClosedDaysToPicker();
+    renderBoard(data.responses);
+    if (isAdmin) renderAdminClosedPicker();
+  }
+
+  document.getElementById('submitBtn').addEventListener('click', async () => {
+    const statusMsg = document.getElementById('statusMsg');
+    const name = nameSelect.value;
+    if (!name) {
+      statusMsg.textContent = 'Choose your name first.';
+      statusMsg.style.color = 'var(--clay)';
+      return;
+    }
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    statusMsg.textContent = 'Saving...';
+    statusMsg.style.color = 'var(--net-gray)';
+    try {
+      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value);
+      statusMsg.textContent = isOut ? `Saved — see you next week, ${name}!` : `Saved — thanks, ${name}!`;
+      statusMsg.style.color = 'var(--ball-yellow)';
+      await refresh();
+    } catch (e) {
+      statusMsg.textContent = 'Could not save: ' + e.message;
+      statusMsg.style.color = 'var(--clay)';
+      console.error('Save error:', e);
+    }
+    btn.disabled = false;
+  });
+
+  // ---- Admin panel ----
+  const adminSelected = new Set();
+
+  function renderAdminCard() {
+    const slot = document.getElementById('adminCardSlot');
+    slot.innerHTML = `
+      <div class="card admin-card">
+        <h2>Admin tools <span class="tag admin">Private link</span></h2>
+        <label class="field-label">Mark club-closed days this week</label>
+        <div class="day-grid" id="adminDayGrid"></div>
+        <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
+        <div class="status-msg admin-status" id="adminStatusMsg"></div>
+        <div class="footer-actions">
+          <button class="link-btn" id="clearBtn">Clear all responses for this week</button>
+        </div>
+      </div>`;
+
+    const adminDayGrid = document.getElementById('adminDayGrid');
+    weekDays.forEach((d, idx) => {
+      const chip = document.createElement('div');
+      chip.className = 'day-chip admin-select';
+      chip.innerHTML = `<span class="dow">${DOW[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>`;
+      chip.addEventListener('click', () => {
+        if (adminSelected.has(idx)) { adminSelected.delete(idx); chip.classList.remove('selected'); }
+        else { adminSelected.add(idx); chip.classList.add('selected'); }
+      });
+      adminDayGrid.appendChild(chip);
+    });
+
+    document.getElementById('saveClosedBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('adminStatusMsg');
+      msg.textContent = 'Saving...';
+      try {
+        await saveClosedDays(Array.from(adminSelected));
+        msg.textContent = 'Saved.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', async () => {
+      if (!confirm("Clear everyone's responses for this week? This cannot be undone.")) return;
+      const msg = document.getElementById('adminStatusMsg');
+      try {
+        await clearAllResponses();
+        msg.textContent = 'Cleared.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+  }
+
+  function renderAdminClosedPicker() {
+    const chips = document.querySelectorAll('#adminDayGrid .day-chip');
+    chips.forEach((chip, idx) => {
+      const on = closedDays.includes(idx);
+      chip.classList.toggle('selected', on);
+      if (on) adminSelected.add(idx); else adminSelected.delete(idx);
+    });
+  }
+
+  if (isAdmin) {
+    renderAdminCard();
+  }
+
+  refresh();
+})();
+</script>
+</body>
+</html>
