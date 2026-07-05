@@ -513,6 +513,12 @@
     nameSelect.appendChild(opt);
   });
 
+  const LAST_NAME_KEY = 'tennisLastPlayerName';
+  const savedName = localStorage.getItem(LAST_NAME_KEY);
+  if (savedName && PLAYERS.includes(savedName)) {
+    nameSelect.value = savedName;
+  }
+
   let closedDays = [];
 
   // Build day picker
@@ -831,6 +837,7 @@
     statusMsg.style.color = 'var(--net-gray)';
     try {
       await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value);
+      localStorage.setItem(LAST_NAME_KEY, name);
       statusMsg.textContent = isOut ? `Saved — see you next week, ${name}!` : `Saved — thanks, ${name}!`;
       statusMsg.style.color = 'var(--ball-yellow)';
       await refresh();
@@ -910,6 +917,35 @@
   }
 
   refresh();
+
+  // Auto-refresh the board periodically so people see live updates without
+  // reloading. Paused while the tab is hidden/backgrounded to avoid wasted
+  // requests, and resumed (with an immediate refresh) when it becomes visible.
+  const POLL_INTERVAL_MS = 45000;
+  let pollHandle = null;
+
+  function startPolling() {
+    if (pollHandle) return;
+    pollHandle = setInterval(refresh, POLL_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (pollHandle) {
+      clearInterval(pollHandle);
+      pollHandle = null;
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      refresh();
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  });
+
+  startPolling();
 })();
 </script>
 </body>
