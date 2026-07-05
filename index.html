@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sunday Lineup — Tennis Availability</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sunday Lineup">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#142B3D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -399,6 +405,54 @@
   .best-banner .txt-main { font-family: 'Archivo Black', sans-serif; font-size: 15px; }
   .best-banner .txt-sub { color: var(--net-gray); font-size: 12px; margin-top: 2px; }
 
+  .missing-note {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--clay);
+    background: rgba(193,80,43,0.1);
+    border: 1px solid var(--clay-dim);
+    border-radius: 8px;
+    padding: 9px 12px;
+    margin-bottom: 14px;
+  }
+  .missing-note.ok {
+    color: var(--ball-yellow);
+    background: rgba(215,242,60,0.08);
+    border-color: var(--ball-yellow-dim);
+  }
+
+  .small-btn {
+    display: inline-block;
+    background: none;
+    border: 1px solid var(--net-gray);
+    color: var(--chalk);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 3px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .small-btn:hover { border-color: var(--ball-yellow); color: var(--ball-yellow); }
+
+  .copy-lineup-btn {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    background: var(--court-navy-deep);
+    border: 1px solid var(--ball-yellow-dim);
+    color: var(--ball-yellow);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .copy-lineup-btn:hover { background: rgba(215,242,60,0.08); }
+
   .footer-actions {
     display: flex;
     justify-content: flex-end;
@@ -460,6 +514,7 @@
 
   <div class="card">
     <h2>This week's board <span class="tag subtle" id="lastRefreshedTag">Loading…</span></h2>
+    <div id="missingSlot"></div>
     <div id="bestBannerSlot"></div>
     <div class="scoreboard-scroll">
       <table class="scoreboard" id="scoreboard">
@@ -535,6 +590,20 @@
   }
 
   let closedDays = [];
+  let lastDayPlans = [];
+
+  // Start time rule: 6:15am if Igal is in that day's lineup, otherwise 6:30am.
+  // Always finishes by 7:45am.
+  const END_TIME_LABEL = '7:45am';
+  const END_TIME_24 = [7, 45];
+  function getStartTime24(plan) {
+    const hasIgal = plan.playing.some(r => r.name === 'Igal');
+    return hasIgal ? [6, 15] : [6, 30];
+  }
+  function getStartTime(plan) {
+    const [h, m] = getStartTime24(plan);
+    return `${h}:${String(m).padStart(2, '0')}am`;
+  }
 
   // Build day picker
   const dayGrid = document.getElementById('dayGrid');
@@ -733,6 +802,56 @@
     return dayPlans;
   }
 
+  function buildICS(dateObj, startHM, endHM, title, description) {
+    const pad = n => String(n).padStart(2, '0');
+    const start = new Date(dateObj); start.setHours(startHM[0], startHM[1], 0, 0);
+    const end = new Date(dateObj); end.setHours(endHM[0], endHM[1], 0, 0);
+    const fmt = d => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    const esc = s => String(s).replace(/([,;])/g, '\\$1');
+    return [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Sunday Lineup//EN',
+      'BEGIN:VEVENT',
+      `UID:${Date.now()}-${Math.random().toString(36).slice(2)}@sundaylineup`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      `SUMMARY:${esc(title)}`,
+      `DESCRIPTION:${esc(description)}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+  }
+
+  function downloadICS(icsText, filename) {
+    const blob = new Blob([icsText], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function buildLineupText(dayPlans) {
+    const lines = [`Sunday Lineup — ${fmtRange()}`, ''];
+    dayPlans.forEach(plan => {
+      const d = weekDays[plan.idx];
+      const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      if (plan.closed) { lines.push(`${dateLabel}: Club closed`); return; }
+      if (plan.available.length === 0) { lines.push(`${dateLabel}: no one available`); return; }
+      if (plan.available.length < 4) {
+        lines.push(`${dateLabel}: only ${plan.available.length} available (need 4) — ${plan.available.map(r => r.name).join(', ')}`);
+        return;
+      }
+      const startLabel = getStartTime(plan);
+      lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL}): ${plan.playing.map(r => r.name).join(', ')}`);
+    });
+    return lines.join('\n');
+  }
+
   function renderBoard(responses) {
     const tbody = document.getElementById('tbody');
     const countRow = document.getElementById('countRow');
@@ -740,6 +859,13 @@
     const emptyState = document.getElementById('emptyState');
     const scoreboard = document.getElementById('scoreboard');
     const bestBannerSlot = document.getElementById('bestBannerSlot');
+    const missingSlot = document.getElementById('missingSlot');
+
+    const respondedNames = responses.map(r => r.name);
+    const missing = PLAYERS.filter(p => !respondedNames.includes(p));
+    missingSlot.innerHTML = missing.length === 0
+      ? `<div class="missing-note ok">Everyone's responded! ✅</div>`
+      : `<div class="missing-note">Still waiting on: ${escapeHtml(missing.join(', '))}</div>`;
 
     if (responses.length === 0 && closedDays.length === 0) {
       scoreboard.style.display = 'none';
@@ -802,11 +928,12 @@
       if (plan.available.length < 4) {
         return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
       }
+      const startLabel = getStartTime(plan);
       const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
       const overrideNote = plan.forcedOverride && plan.forcedOverride.length > 0
         ? ` <span style="color:var(--clay)">(needed to exceed their day limit for: ${escapeHtml(plan.forcedOverride.map(r => r.name).join(', '))})</span>`
         : '';
-      return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel}:</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${overrideNote}</div>`;
+      return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${overrideNote} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button></div>`;
     }).join('');
 
     const anyPlayableDay = dayPlans.some(p => !p.closed && p.available.length >= 4);
@@ -816,12 +943,46 @@
 
     bestBannerSlot.innerHTML = `<div class="best-banner">
         <div class="ball"></div>
-        <div>
+        <div style="flex:1;">
           <div class="txt-main">This week's lineup</div>
           ${dayLines}
           <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
+          <button type="button" class="copy-lineup-btn" id="copyLineupBtn">Copy lineup to clipboard</button>
         </div>
       </div>`;
+
+    lastDayPlans = dayPlans;
+
+    bestBannerSlot.querySelectorAll('.add-cal-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.idx);
+        const plan = lastDayPlans.find(p => p.idx === idx);
+        if (!plan) return;
+        const d = weekDays[idx];
+        const ics = buildICS(
+          d,
+          getStartTime24(plan),
+          END_TIME_24,
+          'Tennis — Sunday Lineup',
+          'Playing: ' + plan.playing.map(r => r.name).join(', ')
+        );
+        downloadICS(ics, `tennis-${isoDate(d)}.ics`);
+      });
+    });
+
+    const copyBtn = document.getElementById('copyLineupBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const text = buildLineupText(lastDayPlans);
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = 'Copied!';
+        } catch (e) {
+          copyBtn.textContent = 'Copy failed — select manually';
+        }
+        setTimeout(() => { copyBtn.textContent = 'Copy lineup to clipboard'; }, 2000);
+      });
+    }
   }
 
   function escapeHtml(s) {
