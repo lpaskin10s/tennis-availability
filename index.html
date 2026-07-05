@@ -132,6 +132,21 @@
     color: var(--chalk);
   }
 
+  .card h2 .tag.subtle {
+    background: var(--court-navy-deep);
+    color: var(--net-gray);
+    font-weight: 400;
+    margin-left: auto;
+  }
+
+  .card h2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   label.field-label {
     display: block;
     font-size: 12px;
@@ -444,7 +459,7 @@
   </div>
 
   <div class="card">
-    <h2>This week's board</h2>
+    <h2>This week's board <span class="tag subtle" id="lastRefreshedTag">Loading…</span></h2>
     <div id="bestBannerSlot"></div>
     <div class="scoreboard-scroll">
       <table class="scoreboard" id="scoreboard">
@@ -627,11 +642,11 @@
     const params = new URLSearchParams({ action: 'list', week: weekKey });
     try {
       const res = await fetch(`${API_URL}?${params.toString()}`);
-      if (!res.ok) return { responses: [], closedDays: [] };
+      if (!res.ok) return { responses: [], closedDays: [], ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [] };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], ok: true };
     } catch (e) {
-      return { responses: [], closedDays: [] };
+      return { responses: [], closedDays: [], ok: false };
     }
   }
 
@@ -817,10 +832,17 @@
 
   async function refresh() {
     const data = await loadData();
+    const tag = document.getElementById('lastRefreshedTag');
+    const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!data.ok) {
+      if (tag) tag.textContent = `Refresh failed at ${timeLabel} — retrying`;
+      return;
+    }
     closedDays = data.closedDays;
     applyClosedDaysToPicker();
     renderBoard(data.responses);
     if (isAdmin) renderAdminClosedPicker();
+    if (tag) tag.textContent = `Updated ${timeLabel}`;
   }
 
   document.getElementById('submitBtn').addEventListener('click', async () => {
