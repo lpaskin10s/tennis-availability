@@ -591,6 +591,7 @@
 
   let closedDays = [];
   let lastDayPlans = [];
+  let didInitialPopulate = false;
 
   // Start time rule: 6:15am if Igal is in that day's lineup, otherwise 6:30am.
   // Always finishes by 7:45am.
@@ -655,8 +656,10 @@
   const outToggleBtn = document.getElementById('outToggle');
   const maxStreakInput = document.getElementById('maxStreakInput');
   const maxWeeklyInput = document.getElementById('maxWeeklyInput');
-  outToggleBtn.addEventListener('click', () => {
-    isOut = !isOut;
+  const noteInput = document.getElementById('noteInput');
+
+  function setOutState(state) {
+    isOut = state;
     outToggleBtn.classList.toggle('active', isOut);
     outToggleBtn.textContent = isOut ? "I'm out this week ✕" : "I'm out this week";
     maxStreakInput.disabled = isOut;
@@ -670,6 +673,44 @@
         chip.setAttribute('aria-checked', 'false');
       }
     });
+  }
+
+  outToggleBtn.addEventListener('click', () => setOutState(!isOut));
+
+  let lastResponses = [];
+
+  function populateFormForName(name) {
+    // Reset the form first so stale data from a previously-selected name doesn't linger
+    selected.clear();
+    dayChips.forEach(chip => {
+      chip.classList.remove('selected');
+      chip.setAttribute('aria-checked', 'false');
+    });
+    noteInput.value = '';
+    maxStreakInput.value = '';
+    maxWeeklyInput.value = '';
+    setOutState(false);
+
+    const existing = lastResponses.find(r => r.name === name);
+    if (!existing) return;
+
+    if (existing.out) {
+      setOutState(true);
+    } else {
+      existing.days.forEach(idx => {
+        if (closedDays.includes(idx) || !dayChips[idx]) return;
+        selected.add(idx);
+        dayChips[idx].classList.add('selected');
+        dayChips[idx].setAttribute('aria-checked', 'true');
+      });
+    }
+    noteInput.value = existing.note || '';
+    maxStreakInput.value = existing.maxstreak || '';
+    maxWeeklyInput.value = existing.maxweekly || '';
+  }
+
+  nameSelect.addEventListener('change', () => {
+    if (nameSelect.value) populateFormForName(nameSelect.value);
   });
 
   // Table headers
@@ -1000,10 +1041,15 @@
       return;
     }
     closedDays = data.closedDays;
+    lastResponses = data.responses;
     applyClosedDaysToPicker();
     renderBoard(data.responses);
     if (isAdmin) renderAdminClosedPicker();
     if (tag) tag.textContent = `Updated ${timeLabel}`;
+    if (!didInitialPopulate && nameSelect.value) {
+      populateFormForName(nameSelect.value);
+      didInitialPopulate = true;
+    }
   }
 
   document.getElementById('submitBtn').addEventListener('click', async () => {
