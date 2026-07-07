@@ -493,7 +493,7 @@
   <div class="eyebrow">The Court List</div>
   <h1>Sunday Lineup</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v1.5</div>
+  <div class="version-tag">v1.7</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -805,7 +805,9 @@
       }
 
       const available = responses.filter(r => r.days.includes(idx));
-      if (available.length === 0) {
+      if (available.length < 4) {
+        // Not enough people for an actual match — nobody's streak or weekly
+        // count should move, since no game is really happening this day.
         return { idx, closed: false, available, playing: [], alternates: [], forcedOverride: [] };
       }
 
@@ -826,7 +828,7 @@
       const byFairness = (a, b) => {
         const diff = playCount[a.name] - playCount[b.name];
         if (diff !== 0) return diff;
-        return Math.random() - 0.5;
+        return a.name.localeCompare(b.name);
       };
 
       let playing = [...eligible].sort(byFairness).slice(0, 4);
@@ -888,16 +890,14 @@
   }
 
   function buildLineupText(dayPlans) {
+    const confirmedDays = dayPlans.filter(plan => !plan.closed && plan.playing.length >= 4);
+    if (confirmedDays.length === 0) {
+      return `Sunday Lineup — ${fmtRange()}\n\nNo days have 4 players confirmed yet.`;
+    }
     const lines = [`Sunday Lineup — ${fmtRange()}`, ''];
-    dayPlans.forEach(plan => {
+    confirmedDays.forEach(plan => {
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
-      if (plan.closed) { lines.push(`${dateLabel}: Club closed`); return; }
-      if (plan.available.length === 0) { lines.push(`${dateLabel}: no one available`); return; }
-      if (plan.available.length < 4) {
-        lines.push(`${dateLabel}: only ${plan.available.length} available (need 4) — ${plan.available.map(r => r.name).join(', ')}`);
-        return;
-      }
       const startLabel = getStartTime(plan);
       lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL}): ${plan.playing.map(r => r.name).join(', ')}`);
     });
