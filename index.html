@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sunday Lineup — Tennis Availability</title>
+<title>NSRC Early Birds — Tennis Availability</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Sunday Lineup">
+<meta name="apple-mobile-web-app-title" content="Early Birds">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#142B3D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -490,10 +490,10 @@
 <body>
 
 <div class="header">
-  <div class="eyebrow">The Court List</div>
-  <h1>Sunday Lineup</h1>
+  <div class="eyebrow">Tennis Availability</div>
+  <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v1.7</div>
+  <div class="version-tag">v1.8</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -555,11 +555,13 @@
   const isAdmin = !!adminKey;
 
   function getWeekStart() {
+    // The schedule opens each Saturday for the upcoming Monday–Friday.
+    // Returns the most recent Saturday on/before today.
     const today = new Date();
     today.setHours(0,0,0,0);
-    const day = today.getDay();
+    const daysSinceSaturday = (today.getDay() + 1) % 7; // Sat=0, Sun=1, Mon=2, ... Fri=6
     const start = new Date(today);
-    start.setDate(today.getDate() - day);
+    start.setDate(today.getDate() - daysSinceSaturday);
     return start;
   }
 
@@ -567,9 +569,9 @@
     return d.toISOString().slice(0,10);
   }
 
-  const weekStart = getWeekStart();
+  const weekStart = getWeekStart(); // the opening Saturday
   const weekDays = [];
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 2; i <= 6; i++) { // Monday (+2) through Friday (+6) after that Saturday
     const d = new Date(weekStart);
     d.setDate(weekStart.getDate() + i);
     weekDays.push(d);
@@ -865,7 +867,7 @@
     return [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Sunday Lineup//EN',
+      'PRODID:-//NSRC Early Birds//EN',
       'BEGIN:VEVENT',
       `UID:${Date.now()}-${Math.random().toString(36).slice(2)}@sundaylineup`,
       `DTSTART:${fmt(start)}`,
@@ -892,9 +894,9 @@
   function buildLineupText(dayPlans) {
     const confirmedDays = dayPlans.filter(plan => !plan.closed && plan.playing.length >= 4);
     if (confirmedDays.length === 0) {
-      return `Sunday Lineup — ${fmtRange()}\n\nNo days have 4 players confirmed yet.`;
+      return `NSRC Early Birds — ${fmtRange()}\n\nNo days have 4 players confirmed yet.`;
     }
-    const lines = [`Sunday Lineup — ${fmtRange()}`, ''];
+    const lines = [`NSRC Early Birds — ${fmtRange()}`, ''];
     confirmedDays.forEach(plan => {
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
@@ -1015,7 +1017,7 @@
           d,
           getStartTime24(plan),
           END_TIME_24,
-          'Tennis — Sunday Lineup',
+          'NSRC Early Birds — Tennis',
           'Playing: ' + plan.playing.map(r => r.name).join(', ')
         );
         downloadICS(ics, `tennis-${isoDate(d)}.ics`);
