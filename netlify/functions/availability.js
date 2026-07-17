@@ -1,6 +1,13 @@
 import { getStore } from "@netlify/blobs";
+import webpush from "web-push";
 
 const ADMIN_KEY = process.env.ADMIN_KEY;
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails("mailto:admin@nsrcearlybirds.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -13,13 +20,50 @@ function slug(name) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export default async (req) => {
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+  return (h >>> 0).toString(36);
+}
+
+async function notifySubscribers(store, bodyText) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return; // not configured yet — silently skip
+  const { blobs } = await store.list({ prefix: "push-sub:" });
+  const payload = JSON.stringify({ title: "NSRC Early Birds", body: bodyText });
+  await Promise.all(blobs.map(async (b) => {
+    const sub = await store.get(b.key, { type: "json" });
+    if (!sub) return;
+    try {
+      await webpush.sendNotification(sub, payload);
+    } catch (err) {
+      // Stale/expired subscription (device unsubscribed, browser data cleared, etc.) — clean it up.
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+        await store.delete(b.key);
+      }
+      // Any other error: don't fail the save just because a push notification failed.
+    }
+  }));
+}
+
+export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  if (!week) return json({ error: "missing week" }, 400);
+  if (!week && action !== "subscribe") return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
+
+  if (action === "subscribe") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const subJson = url.searchParams.get("subscription");
+    if (!subJson) return json({ error: "missing subscription" }, 400);
+    let sub;
+    try { sub = JSON.parse(subJson); } catch (e) { return json({ error: "invalid subscription" }, 400); }
+    if (!sub.endpoint) return json({ error: "invalid subscription" }, 400);
+    await store.setJSON(`push-sub:${hashString(sub.endpoint)}`, sub);
+    return json({ ok: true });
+  }
 
   if (action === "list") {
     const { blobs } = await store.list({ prefix: `resp:${week}:` });
@@ -30,7 +74,8 @@ export default async (req) => {
     }
     responses.sort((a, b) => a.name.localeCompare(b.name));
     const closedDays = (await store.get(`closed:${week}`, { type: "json" })) || [];
-    return json({ responses, closedDays });
+    const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
+    return json({ responses, closedDays, actualResults });
   }
 
   if (action === "save") {
@@ -50,6 +95,7 @@ export default async (req) => {
       ts: Date.now()
     };
     await store.setJSON(`resp:${week}:${slug(name)}`, value);
+    context.waitUntil(notifySubscribers(store, `${name} updated their availability for the week of ${week}.`));
     return json({ ok: true });
   }
 
@@ -67,6 +113,22 @@ export default async (req) => {
     const closedParam = url.searchParams.get("closedDays") || "";
     const closedDays = closedParam ? closedParam.split(",").filter((x) => x !== "").map(Number) : [];
     await store.setJSON(`closed:${week}`, closedDays);
+    return json({ ok: true });
+  }
+
+  if (action === "setActual") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const dayIdx = url.searchParams.get("dayIdx");
+    if (dayIdx === null) return json({ error: "missing dayIdx" }, 400);
+    const playersParam = url.searchParams.get("players");
+    const current = (await store.get(`actual:${week}`, { type: "json" })) || {};
+    if (playersParam === null || playersParam === "") {
+      delete current[dayIdx];
+    } else {
+      current[dayIdx] = playersParam.split(",").filter(Boolean);
+    }
+    await store.setJSON(`actual:${week}`, current);
     return json({ ok: true });
   }
 
