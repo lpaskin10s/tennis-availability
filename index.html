@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.3</div>
+  <div class="version-tag">v2.4</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1225,26 +1225,43 @@
 
   function renderAdminCard() {
     const slot = document.getElementById('adminCardSlot');
+    let collapsed = true;
+    try { collapsed = localStorage.getItem('tennisAdminCollapsed') !== 'false'; } catch (e) { /* ignore */ }
+
     slot.innerHTML = `
       <div class="card admin-card">
-        <h2>Admin tools <span class="tag admin">Private link</span></h2>
-        <label class="field-label" style="margin-top:22px;">Get notified when someone updates their availability</label>
-        <button class="primary admin-btn" id="enablePushBtn">Enable notifications on this device</button>
-        <div class="status-msg admin-status" id="pushStatusMsg"></div>
+        <h2 id="adminToggleHeader" style="cursor:pointer;user-select:none;">
+          Admin tools <span class="tag admin">Private link</span>
+          <span id="adminChevron" style="margin-left:auto;color:var(--net-gray);font-family:'Space Mono',monospace;font-size:12px;">${collapsed ? '▸ show' : '▾ hide'}</span>
+        </h2>
+        <div id="adminCardBody" style="display:${collapsed ? 'none' : 'block'};">
+          <label class="field-label" style="margin-top:22px;">Get notified when someone updates their availability</label>
+          <button class="primary admin-btn" id="enablePushBtn">Enable notifications on this device</button>
+          <div class="status-msg admin-status" id="pushStatusMsg"></div>
 
-        <label class="field-label" style="margin-top:22px;">Mark club-closed days this week</label>
-        <div class="day-grid" id="adminDayGrid"></div>
-        <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
-        <div class="status-msg admin-status" id="adminStatusMsg"></div>
+          <label class="field-label" style="margin-top:22px;">Mark club-closed days this week</label>
+          <div class="day-grid" id="adminDayGrid"></div>
+          <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
+          <div class="status-msg admin-status" id="adminStatusMsg"></div>
 
-        <label class="field-label" style="margin-top:22px;">Mark who actually played a day</label>
-        <div class="day-grid" id="actualDayGrid"></div>
-        <div id="actualPlayersSlot"></div>
+          <label class="field-label" style="margin-top:22px;">Mark who actually played a day</label>
+          <div class="day-grid" id="actualDayGrid"></div>
+          <div id="actualPlayersSlot"></div>
 
-        <div class="footer-actions">
-          <button class="link-btn" id="clearBtn">Clear all responses for this week</button>
+          <div class="footer-actions">
+            <button class="link-btn" id="clearBtn">Clear all responses for this week</button>
+          </div>
         </div>
       </div>`;
+
+    document.getElementById('adminToggleHeader').addEventListener('click', () => {
+      const body = document.getElementById('adminCardBody');
+      const chevron = document.getElementById('adminChevron');
+      const nowCollapsed = body.style.display !== 'none';
+      body.style.display = nowCollapsed ? 'none' : 'block';
+      chevron.textContent = nowCollapsed ? '▸ show' : '▾ hide';
+      try { localStorage.setItem('tennisAdminCollapsed', String(nowCollapsed)); } catch (e) { /* ignore */ }
+    });
 
     document.getElementById('enablePushBtn').addEventListener('click', async () => {
       const msg = document.getElementById('pushStatusMsg');
