@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v1.8</div>
+  <div class="version-tag">v2.1</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -549,6 +549,44 @@
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const PLAYERS = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
   const API_URL = '/api/availability';
+  const VAPID_PUBLIC_KEY = 'BGsWtB6zkEL-X2Agy3pIeFZ0IcJA_P9AAppXnJXsw-5CsmTPM-_ckXBdQKgYnbYgn7DXcHIMt3TdF5uEEwkQRtA';
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  async function enablePushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      throw new Error('Push notifications are not supported in this browser.');
+    }
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      throw new Error('Notification permission was not granted.');
+    }
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    const params = new URLSearchParams({
+      action: 'subscribe',
+      week: weekKey,
+      key: adminKey,
+      subscription: JSON.stringify(subscription)
+    });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Failed to save subscription');
+  }
 
   const urlParams = new URLSearchParams(window.location.search);
   const adminKey = urlParams.get('admin');
@@ -570,6 +608,39 @@
   }
 
   const weekStart = getWeekStart(); // the opening Saturday
+
+  // Ties in the fairness sort don't break alphabetically (which would always
+  // disadvantage the same people, e.g. names late in PLAYERS). Instead, each
+  // week gets its own well-mixed shuffle order for tie-breaking, seeded off
+  // the week's date so it's deterministic (same for everyone, no memory
+  // needed) but not a rigid repeating pattern like a simple rotation would be.
+  function hashString(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function seededShuffle(arr, seed) {
+    const a = [...arr];
+    const rand = mulberry32(seed);
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  const weekSeed = hashString(isoDate(weekStart));
+  const shuffledOrder = seededShuffle(PLAYERS, weekSeed);
+  const tieRank = {};
+  shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+
   const weekDays = [];
   for (let i = 2; i <= 6; i++) { // Monday (+2) through Friday (+6) after that Saturday
     const d = new Date(weekStart);
@@ -603,6 +674,7 @@
   }
 
   let closedDays = [];
+  let actualResults = {};
   let lastDayPlans = [];
   let didInitialPopulate = false;
 
@@ -765,11 +837,11 @@
     const params = new URLSearchParams({ action: 'list', week: weekKey });
     try {
       const res = await fetch(`${API_URL}?${params.toString()}`);
-      if (!res.ok) return { responses: [], closedDays: [], ok: false };
+      if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [], ok: true };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], actualResults: data.actualResults || {}, ok: true };
     } catch (e) {
-      return { responses: [], closedDays: [], ok: false };
+      return { responses: [], closedDays: [], actualResults: {}, ok: false };
     }
   }
 
@@ -782,6 +854,13 @@
 
   async function saveClosedDays(days) {
     const params = new URLSearchParams({ action: 'setClosed', week: weekKey, key: adminKey, closedDays: days.join(',') });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  async function saveActualResult(dayIdx, players) {
+    const params = new URLSearchParams({ action: 'setActual', week: weekKey, key: adminKey, dayIdx: String(dayIdx), players: players.join(',') });
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
@@ -800,51 +879,64 @@
       currentStreak[r.name] = 0;
       lastPlayedIdx[r.name] = -99;
     });
+    const byName = {};
+    responses.forEach(r => { byName[r.name] = r; });
 
     const dayPlans = weekDays.map((d, idx) => {
       if (closedDays.includes(idx)) {
-        return { idx, closed: true, available: [], playing: [], alternates: [], forcedOverride: [] };
+        return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [] };
       }
 
       const available = responses.filter(r => r.days.includes(idx));
-      if (available.length < 4) {
+      const actualNames = actualResults[String(idx)];
+
+      let playing;
+      let isActual = false;
+      let cappedOut = [];
+
+      if (actualNames) {
+        // Admin has recorded who genuinely played this day — trust that
+        // completely over any projection, and use it as ground truth for
+        // every later day's streak/weekly counts.
+        isActual = true;
+        playing = actualNames.map(n => byName[n]).filter(Boolean);
+      } else if (available.length < 4) {
         // Not enough people for an actual match — nobody's streak or weekly
         // count should move, since no game is really happening this day.
-        return { idx, closed: false, available, playing: [], alternates: [], forcedOverride: [] };
-      }
+        playing = [];
+      } else {
+        // Hard caps: a player's own "max days in a row" / "max days this
+        // week" limit is never overridden, even if that leaves the court
+        // short of 4. The day is reported honestly as short-staffed instead.
+        const wouldExceed = (r) => {
+          const streakCap = r.maxstreak;
+          const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
 
-      const wouldExceed = (r) => {
-        const streakCap = r.maxstreak;
-        const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
-        const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
+          const weeklyCap = r.maxweekly;
+          const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
 
-        const weeklyCap = r.maxweekly;
-        const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
+          return streakExceeded || weeklyExceeded;
+        };
 
-        return streakExceeded || weeklyExceeded;
-      };
+        const eligible = available.filter(r => !wouldExceed(r));
+        cappedOut = available.filter(r => wouldExceed(r));
 
-      const eligible = available.filter(r => !wouldExceed(r));
-      const cappedOut = available.filter(r => wouldExceed(r));
+        const byFairness = (a, b) => {
+          const diff = playCount[a.name] - playCount[b.name];
+          if (diff !== 0) return diff;
+          return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
+        };
 
-      const byFairness = (a, b) => {
-        const diff = playCount[a.name] - playCount[b.name];
-        if (diff !== 0) return diff;
-        return a.name.localeCompare(b.name);
-      };
-
-      let playing = [...eligible].sort(byFairness).slice(0, 4);
-      let forcedOverride = [];
-      if (playing.length < 4 && cappedOut.length > 0) {
-        const need = 4 - playing.length;
-        const forced = [...cappedOut].sort(byFairness).slice(0, need);
-        forcedOverride = forced;
-        playing = playing.concat(forced);
+        playing = [...eligible].sort(byFairness).slice(0, 4);
       }
 
       const alternates = available.filter(r => !playing.includes(r));
 
-      available.forEach(r => {
+      // Advance streak/weekly tracking based on who's actually playing
+      // today, whether that came from a real recorded result or a
+      // projection — either way it's the best-known truth for today.
+      responses.forEach(r => {
         if (playing.includes(r)) {
           currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
           lastPlayedIdx[r.name] = idx;
@@ -852,7 +944,7 @@
         }
       });
 
-      return { idx, closed: false, available, playing, alternates, forcedOverride };
+      return { idx, closed: false, isActual, available, playing, alternates, cappedOut };
     });
 
     return dayPlans;
@@ -901,7 +993,8 @@
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
       const startLabel = getStartTime(plan);
-      lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL}): ${plan.playing.map(r => r.name).join(', ')}`);
+      const tag = plan.isActual ? ' (confirmed)' : '';
+      lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL})${tag}: ${plan.playing.map(r => r.name).join(', ')}`);
     });
     return lines.join('\n');
   }
@@ -957,11 +1050,14 @@
         if (plan.closed) {
           return `<td><span class="stamp closed">CLOSED</span><span class="count-sub">club closed</span></td>`;
         }
-        const c = plan.available.length;
-        const ok = c >= 4;
-        let sub = `${c} of ${responses.length}`;
+        const ok = plan.playing.length >= 4;
+        let sub;
         if (ok && plan.alternates.length > 0) {
           sub = 'sits out: ' + plan.alternates.map(r => r.name).join(', ');
+        } else if (!ok && plan.cappedOut.length > 0) {
+          sub = `${plan.available.length} available, but limits leave only ${plan.playing.length}`;
+        } else {
+          sub = `${plan.available.length} of ${responses.length}`;
         }
         return `<td><span class="stamp ${ok ? 'in' : 'out'}">${ok ? 'IN' : 'OUT'}</span><span class="count-sub">${escapeHtml(sub)}</span></td>`;
       }).join('') + '<td></td>';
@@ -973,24 +1069,25 @@
     const dayLines = dayPlans.map(plan => {
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      const confirmedTag = plan.isActual ? ` <span style="color:var(--ball-yellow);">✓ confirmed</span>` : '';
       if (plan.closed) {
         return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
+      }
+      if (plan.playing.length >= 4) {
+        const startLabel = getStartTime(plan);
+        const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
+        return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button></div>`;
       }
       if (plan.available.length === 0) {
         return `<div class="txt-sub">${dateLabel}: no one available</div>`;
       }
-      if (plan.available.length < 4) {
-        return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
+      if (plan.cappedOut.length > 0) {
+        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${escapeHtml(plan.cappedOut.map(r => r.name).join(', '))} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.playing.length} eligible (need 4)</div>`;
       }
-      const startLabel = getStartTime(plan);
-      const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
-      const overrideNote = plan.forcedOverride && plan.forcedOverride.length > 0
-        ? ` <span style="color:var(--clay)">(needed to exceed their day limit for: ${escapeHtml(plan.forcedOverride.map(r => r.name).join(', '))})</span>`
-        : '';
-      return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${overrideNote} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button></div>`;
+      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
     }).join('');
 
-    const anyPlayableDay = dayPlans.some(p => !p.closed && p.available.length >= 4);
+    const anyPlayableDay = dayPlans.some(p => p.playing.length >= 4);
     const balanceNote = anyPlayableDay
       ? `Games this week — ${Object.entries(playCountTotal).map(([n, c]) => `${escapeHtml(n)}: ${c}`).join(' · ')}`
       : 'No day has 4 people yet — need more responses to fill the court.';
@@ -1054,10 +1151,11 @@
       return;
     }
     closedDays = data.closedDays;
+    actualResults = data.actualResults;
     lastResponses = data.responses;
     applyClosedDaysToPicker();
     renderBoard(data.responses);
-    if (isAdmin) renderAdminClosedPicker();
+    if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); }
     if (tag) tag.textContent = `Updated ${timeLabel}`;
     if (!didInitialPopulate && nameSelect.value) {
       populateFormForName(nameSelect.value);
@@ -1093,20 +1191,45 @@
 
   // ---- Admin panel ----
   const adminSelected = new Set();
+  let actualEditDayIdx = null;
+  const actualEditSelected = new Set();
 
   function renderAdminCard() {
     const slot = document.getElementById('adminCardSlot');
     slot.innerHTML = `
       <div class="card admin-card">
         <h2>Admin tools <span class="tag admin">Private link</span></h2>
-        <label class="field-label">Mark club-closed days this week</label>
+        <label class="field-label" style="margin-top:22px;">Get notified when someone updates their availability</label>
+        <button class="primary admin-btn" id="enablePushBtn">Enable notifications on this device</button>
+        <div class="status-msg admin-status" id="pushStatusMsg"></div>
+
+        <label class="field-label" style="margin-top:22px;">Mark club-closed days this week</label>
         <div class="day-grid" id="adminDayGrid"></div>
         <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
         <div class="status-msg admin-status" id="adminStatusMsg"></div>
+
+        <label class="field-label" style="margin-top:22px;">Mark who actually played a day</label>
+        <div class="day-grid" id="actualDayGrid"></div>
+        <div id="actualPlayersSlot"></div>
+
         <div class="footer-actions">
           <button class="link-btn" id="clearBtn">Clear all responses for this week</button>
         </div>
       </div>`;
+
+    document.getElementById('enablePushBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('pushStatusMsg');
+      msg.textContent = 'Enabling...';
+      msg.style.color = 'var(--net-gray)';
+      try {
+        await enablePushNotifications();
+        msg.textContent = 'Notifications enabled on this device.';
+        msg.style.color = 'var(--ball-yellow)';
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--clay)';
+      }
+    });
 
     const adminDayGrid = document.getElementById('adminDayGrid');
     weekDays.forEach((d, idx) => {
@@ -1142,6 +1265,83 @@
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
       }
+    });
+
+    const actualDayGrid = document.getElementById('actualDayGrid');
+    weekDays.forEach((d, idx) => {
+      const chip = document.createElement('div');
+      chip.className = 'day-chip admin-select';
+      chip.innerHTML = `<span class="dow">${DOW[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>`;
+      chip.addEventListener('click', () => selectActualEditDay(idx));
+      actualDayGrid.appendChild(chip);
+    });
+  }
+
+  function selectActualEditDay(idx) {
+    actualEditDayIdx = idx;
+    const chips = document.querySelectorAll('#actualDayGrid .day-chip');
+    chips.forEach((chip, i) => chip.classList.toggle('selected', i === idx));
+
+    actualEditSelected.clear();
+    const existing = actualResults[String(idx)];
+    if (existing) existing.forEach(n => actualEditSelected.add(n));
+
+    const slot = document.getElementById('actualPlayersSlot');
+    slot.innerHTML = `
+      <div style="margin-top:10px;">
+        <div class="day-grid" id="actualPlayerChips" style="grid-template-columns: repeat(4, 1fr);"></div>
+        <button class="primary admin-btn" id="saveActualBtn" style="margin-top:10px;">Save actual result for this day</button>
+        <button class="link-btn" id="clearActualBtn" style="display:block;margin-top:6px;">Clear recorded result (go back to projection)</button>
+        <div class="status-msg admin-status" id="actualStatusMsg"></div>
+      </div>`;
+
+    const chipGrid = document.getElementById('actualPlayerChips');
+    PLAYERS.forEach(name => {
+      const chip = document.createElement('div');
+      chip.className = 'day-chip admin-select';
+      chip.style.padding = '10px 4px';
+      chip.innerHTML = `<span class="dnum" style="font-size:13px;">${escapeHtml(name)}</span>`;
+      chip.classList.toggle('selected', actualEditSelected.has(name));
+      chip.addEventListener('click', () => {
+        if (actualEditSelected.has(name)) { actualEditSelected.delete(name); chip.classList.remove('selected'); }
+        else { actualEditSelected.add(name); chip.classList.add('selected'); }
+      });
+      chipGrid.appendChild(chip);
+    });
+
+    document.getElementById('saveActualBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('actualStatusMsg');
+      msg.textContent = 'Saving...';
+      try {
+        await saveActualResult(actualEditDayIdx, Array.from(actualEditSelected));
+        msg.textContent = 'Saved.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    document.getElementById('clearActualBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('actualStatusMsg');
+      msg.textContent = 'Clearing...';
+      try {
+        await saveActualResult(actualEditDayIdx, []);
+        msg.textContent = 'Cleared — back to projection.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+  }
+
+  function renderAdminActualPicker() {
+    const chips = document.querySelectorAll('#actualDayGrid .day-chip');
+    if (chips.length === 0) return;
+    chips.forEach((chip, idx) => {
+      const hasActual = !!actualResults[String(idx)];
+      chip.classList.toggle('closed-chip', false);
+      chip.style.borderColor = hasActual ? 'var(--ball-yellow-dim)' : '';
+      chip.style.opacity = hasActual ? '1' : '';
     });
   }
 
