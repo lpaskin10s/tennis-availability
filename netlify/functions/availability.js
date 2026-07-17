@@ -27,15 +27,22 @@ function hashString(str) {
 }
 
 async function notifySubscribers(store, bodyText) {
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return; // not configured yet — silently skip
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.log("notifySubscribers: VAPID keys not configured, skipping.");
+    return;
+  }
   const { blobs } = await store.list({ prefix: "push-sub:" });
+  console.log(`notifySubscribers: found ${blobs.length} subscription(s).`);
+  if (blobs.length === 0) return;
   const payload = JSON.stringify({ title: "NSRC Early Birds", body: bodyText });
   await Promise.all(blobs.map(async (b) => {
     const sub = await store.get(b.key, { type: "json" });
     if (!sub) return;
     try {
       await webpush.sendNotification(sub, payload);
+      console.log(`notifySubscribers: sent to ${b.key}`);
     } catch (err) {
+      console.log(`notifySubscribers: failed for ${b.key} — ${err && err.statusCode} ${err && err.message}`);
       // Stale/expired subscription (device unsubscribed, browser data cleared, etc.) — clean it up.
       if (err && (err.statusCode === 404 || err.statusCode === 410)) {
         await store.delete(b.key);

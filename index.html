@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.1</div>
+  <div class="version-tag">v2.2</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -542,6 +542,10 @@
 
   <div id="adminCardSlot"></div>
 
+  <div style="text-align:center; margin: 30px 0 10px;">
+    <button type="button" id="adminSigninBtn" style="background:none;border:none;color:var(--net-gray);opacity:0.35;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;">Admin</button>
+  </div>
+
 </div>
 
 <script>
@@ -588,8 +592,22 @@
     if (!data.ok) throw new Error(data.error || 'Failed to save subscription');
   }
 
+  const ADMIN_KEY_STORAGE = 'tennisAdminKeyStored';
   const urlParams = new URLSearchParams(window.location.search);
-  const adminKey = urlParams.get('admin');
+  let adminKey = urlParams.get('admin');
+
+  if (adminKey) {
+    // Remember it on this device so future opens (e.g. from the home-screen
+    // icon, which has no address bar to type a link into) can restore it.
+    try { localStorage.setItem(ADMIN_KEY_STORAGE, adminKey); } catch (e) { /* ignore */ }
+  } else {
+    let storedAdminKey = null;
+    try { storedAdminKey = localStorage.getItem(ADMIN_KEY_STORAGE); } catch (e) { /* ignore */ }
+    if (storedAdminKey) {
+      window.location.replace(window.location.pathname + '?admin=' + encodeURIComponent(storedAdminKey));
+      return; // page is navigating away; nothing else on this load matters
+    }
+  }
   const isAdmin = !!adminKey;
 
   function getWeekStart() {
@@ -657,6 +675,18 @@
 
   if (isAdmin) {
     document.getElementById('adminPillSlot').innerHTML = '<div class="admin-pill">ADMIN MODE</div>';
+  }
+
+  const adminSigninBtn = document.getElementById('adminSigninBtn');
+  if (isAdmin) {
+    adminSigninBtn.style.display = 'none';
+  } else {
+    adminSigninBtn.addEventListener('click', () => {
+      const code = prompt('Enter admin code:');
+      if (!code) return;
+      try { localStorage.setItem(ADMIN_KEY_STORAGE, code); } catch (e) { /* ignore */ }
+      window.location.href = window.location.pathname + '?admin=' + encodeURIComponent(code);
+    });
   }
 
   const nameSelect = document.getElementById('nameInput');
