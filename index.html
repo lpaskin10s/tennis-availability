@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.2</div>
+  <div class="version-tag">v2.3</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -679,15 +679,14 @@
 
   const adminSigninBtn = document.getElementById('adminSigninBtn');
   if (isAdmin) {
-    adminSigninBtn.style.display = 'none';
-  } else {
-    adminSigninBtn.addEventListener('click', () => {
-      const code = prompt('Enter admin code:');
-      if (!code) return;
-      try { localStorage.setItem(ADMIN_KEY_STORAGE, code); } catch (e) { /* ignore */ }
-      window.location.href = window.location.pathname + '?admin=' + encodeURIComponent(code);
-    });
+    adminSigninBtn.textContent = 'Re-enter admin code';
   }
+  adminSigninBtn.addEventListener('click', () => {
+    const code = prompt('Enter admin code:');
+    if (!code) return;
+    try { localStorage.setItem(ADMIN_KEY_STORAGE, code); } catch (e) { /* ignore */ }
+    window.location.href = window.location.pathname + '?admin=' + encodeURIComponent(code);
+  });
 
   const nameSelect = document.getElementById('nameInput');
   PLAYERS.forEach(p => {
