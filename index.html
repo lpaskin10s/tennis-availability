@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.4</div>
+  <div class="version-tag">v2.5</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -544,6 +544,7 @@
 
   <div style="text-align:center; margin: 30px 0 10px;">
     <button type="button" id="adminSigninBtn" style="background:none;border:none;color:var(--net-gray);opacity:0.35;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;">Admin</button>
+    <button type="button" id="adminExitBtn" style="display:none;background:none;border:none;color:var(--net-gray);opacity:0.35;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;margin-left:10px;">Exit admin mode</button>
   </div>
 
 </div>
@@ -678,8 +679,14 @@
   }
 
   const adminSigninBtn = document.getElementById('adminSigninBtn');
+  const adminExitBtn = document.getElementById('adminExitBtn');
   if (isAdmin) {
     adminSigninBtn.textContent = 'Re-enter admin code';
+    adminExitBtn.style.display = 'inline';
+    adminExitBtn.addEventListener('click', () => {
+      try { localStorage.removeItem(ADMIN_KEY_STORAGE); } catch (e) { /* ignore */ }
+      window.location.href = window.location.pathname;
+    });
   }
   adminSigninBtn.addEventListener('click', () => {
     const code = prompt('Enter admin code:');
