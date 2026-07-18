@@ -92,6 +92,8 @@ export default async (req, context) => {
     const out = url.searchParams.get("out") === "true";
     const maxstreak = url.searchParams.get("maxstreak");
     const maxweekly = url.searchParams.get("maxweekly");
+    const respKey = `resp:${week}:${slug(name)}`;
+    const previous = await store.get(respKey, { type: "json" });
     const value = {
       name,
       days: daysParam ? daysParam.split(",").filter(Boolean).map(Number) : [],
@@ -101,8 +103,19 @@ export default async (req, context) => {
       maxweekly: maxweekly ? Number(maxweekly) : null,
       ts: Date.now()
     };
-    await store.setJSON(`resp:${week}:${slug(name)}`, value);
-    context.waitUntil(notifySubscribers(store, `${name} updated their availability for the week of ${week}.`));
+    await store.setJSON(respKey, value);
+
+    let message = `${name} updated their availability for the week of ${week}.`;
+    if (previous) {
+      const justWentOut = !previous.out && value.out;
+      const droppedDays = (previous.days || []).filter((d) => !value.days.includes(d));
+      if (justWentOut) {
+        message = `${name} just went OUT for the week — the lineup will auto-adjust who's playing.`;
+      } else if (!value.out && droppedDays.length > 0) {
+        message = `${name} dropped some previously-marked days — check if the lineup shifted.`;
+      }
+    }
+    context.waitUntil(notifySubscribers(store, message));
     return json({ ok: true });
   }
 
