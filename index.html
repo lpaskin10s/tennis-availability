@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.5</div>
+  <div class="version-tag">v2.7</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1019,6 +1019,19 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function suggestPairs(playing) {
+    if (playing.length !== 4) return null;
+    const names = playing.map(r => r.name);
+    if (names.includes('Alex') && names.includes('Lewis')) {
+      const rest = names.filter(n => n !== 'Alex' && n !== 'Lewis');
+      return [['Alex', 'Lewis'], rest];
+    }
+    // Deterministic fallback (same weekly shuffle order used for tie-breaks)
+    // so the suggested pairing doesn't flicker between refreshes.
+    const sorted = [...playing].sort((a, b) => (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99)).map(r => r.name);
+    return [[sorted[0], sorted[1]], [sorted[2], sorted[3]]];
+  }
+
   function buildLineupText(dayPlans) {
     const confirmedDays = dayPlans.filter(plan => !plan.closed && plan.playing.length >= 4);
     if (confirmedDays.length === 0) {
@@ -1030,7 +1043,9 @@
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
       const startLabel = getStartTime(plan);
       const tag = plan.isActual ? ' (confirmed)' : '';
-      lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL})${tag}: ${plan.playing.map(r => r.name).join(', ')}`);
+      const pairs = suggestPairs(plan.playing);
+      const pairNote = pairs ? ` [${pairs[0].join(' & ')} vs ${pairs[1].join(' & ')}]` : '';
+      lines.push(`${dateLabel} (${startLabel}–${END_TIME_LABEL})${tag}: ${plan.playing.map(r => r.name).join(', ')}${pairNote}`);
     });
     return lines.join('\n');
   }
@@ -1112,7 +1127,11 @@
       if (plan.playing.length >= 4) {
         const startLabel = getStartTime(plan);
         const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
-        return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button></div>`;
+        const pairs = suggestPairs(plan.playing);
+        const pairLine = pairs
+          ? `<div style="font-size:11px;color:var(--net-gray);margin:2px 0 4px 0;">Suggested teams: ${escapeHtml(pairs[0].join(' & '))} <span style="color:var(--ball-yellow-dim);">vs</span> ${escapeHtml(pairs[1].join(' & '))}</div>`
+          : '';
+        return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}</div>`;
       }
       if (plan.available.length === 0) {
         return `<div class="txt-sub">${dateLabel}: no one available</div>`;
