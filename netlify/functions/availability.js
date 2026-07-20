@@ -52,11 +52,21 @@ async function notifySubscribers(store, bodyText) {
   }));
 }
 
+const DEFAULT_PLAYERS = ["Alex", "Billy", "Bob", "Greg", "Igal", "Joe", "Lewis", "Peter"];
+
+async function getPlayers(store) {
+  const players = await store.get("players", { type: "json" });
+  if (players) return players;
+  await store.setJSON("players", DEFAULT_PLAYERS);
+  return DEFAULT_PLAYERS;
+}
+
 export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  if (!week && action !== "subscribe") return json({ error: "missing week" }, 400);
+  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer"];
+  if (!week && !weekExemptActions.includes(action)) return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
 
@@ -82,7 +92,8 @@ export default async (req, context) => {
     responses.sort((a, b) => a.name.localeCompare(b.name));
     const closedDays = (await store.get(`closed:${week}`, { type: "json" })) || [];
     const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
-    return json({ responses, closedDays, actualResults });
+    const players = await getPlayers(store);
+    return json({ responses, closedDays, actualResults, players });
   }
 
   if (action === "save") {
@@ -150,6 +161,28 @@ export default async (req, context) => {
     }
     await store.setJSON(`actual:${week}`, current);
     return json({ ok: true });
+  }
+
+  if (action === "addPlayer") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const name = (url.searchParams.get("name") || "").trim();
+    if (!name) return json({ error: "missing name" }, 400);
+    const players = await getPlayers(store);
+    if (!players.some((p) => p.toLowerCase() === name.toLowerCase())) {
+      players.push(name);
+      await store.setJSON("players", players);
+    }
+    return json({ ok: true, players });
+  }
+
+  if (action === "removePlayer") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const name = url.searchParams.get("name") || "";
+    const players = (await getPlayers(store)).filter((p) => p !== name);
+    await store.setJSON("players", players);
+    return json({ ok: true, players });
   }
 
   return json({ error: "unknown action" }, 400);
