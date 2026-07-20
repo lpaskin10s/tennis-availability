@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.7</div>
+  <div class="version-tag">v2.8</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -920,7 +920,7 @@
 
     const dayPlans = weekDays.map((d, idx) => {
       if (closedDays.includes(idx)) {
-        return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [] };
+        return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [], eligibleCount: null };
       }
 
       const available = responses.filter(r => r.days.includes(idx));
@@ -929,6 +929,7 @@
       let playing;
       let isActual = false;
       let cappedOut = [];
+      let eligibleCount = null;
 
       if (actualNames) {
         // Admin has recorded who genuinely played this day — trust that
@@ -964,7 +965,12 @@
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
         };
 
-        playing = [...eligible].sort(byFairness).slice(0, 4);
+        const provisionalPlaying = [...eligible].sort(byFairness).slice(0, 4);
+        // Same rule as plain understaffing: fewer than 4 means no real match
+        // happens, so nobody's streak/weekly count should move — even if
+        // caps (rather than raw headcount) are what caused the shortfall.
+        playing = provisionalPlaying.length >= 4 ? provisionalPlaying : [];
+        eligibleCount = eligible.length;
       }
 
       const alternates = available.filter(r => !playing.includes(r));
@@ -980,7 +986,7 @@
         }
       });
 
-      return { idx, closed: false, isActual, available, playing, alternates, cappedOut };
+      return { idx, closed: false, isActual, available, playing, alternates, cappedOut, eligibleCount };
     });
 
     return dayPlans;
@@ -1106,7 +1112,7 @@
         if (ok && plan.alternates.length > 0) {
           sub = 'sits out: ' + plan.alternates.map(r => r.name).join(', ');
         } else if (!ok && plan.cappedOut.length > 0) {
-          sub = `${plan.available.length} available, but limits leave only ${plan.playing.length}`;
+          sub = `${plan.available.length} available, but limits leave only ${plan.eligibleCount ?? 0} eligible`;
         } else {
           sub = `${plan.available.length} of ${responses.length}`;
         }
@@ -1137,7 +1143,7 @@
         return `<div class="txt-sub">${dateLabel}: no one available</div>`;
       }
       if (plan.cappedOut.length > 0) {
-        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${escapeHtml(plan.cappedOut.map(r => r.name).join(', '))} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.playing.length} eligible (need 4)</div>`;
+        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${escapeHtml(plan.cappedOut.map(r => r.name).join(', '))} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)</div>`;
       }
       return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
     }).join('');
