@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.0</div>
+  <div class="version-tag">v3.1</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -505,6 +505,7 @@
     <select id="nameInput">
       <option value="" disabled selected>Choose your name…</option>
     </select>
+    <input type="text" id="subNameInput" placeholder="Sub's name" style="display:none;">
 
     <label class="field-label">Days you can play this week</label>
     <div class="day-grid" id="dayGrid"></div>
@@ -553,6 +554,7 @@
 (function() {
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let PLAYERS = []; // populated from the backend once the first load completes
+  const DEFAULT_PLAYERS_FALLBACK = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
   let playersInitialized = false;
   const API_URL = '/api/availability';
   const VAPID_PUBLIC_KEY = 'BGsWtB6zkEL-X2Agy3pIeFZ0IcJA_P9AAppXnJXsw-5CsmTPM-_ckXBdQKgYnbYgn7DXcHIMt3TdF5uEEwkQRtA';
@@ -711,7 +713,12 @@
       opt.textContent = p;
       nameSelect.appendChild(opt);
     });
-    if (prevValue && PLAYERS.includes(prevValue)) {
+    const subOpt = document.createElement('option');
+    subOpt.value = '__sub__';
+    subOpt.textContent = '+ Add a substitute';
+    nameSelect.appendChild(subOpt);
+
+    if (prevValue && (PLAYERS.includes(prevValue) || prevValue === '__sub__')) {
       nameSelect.value = prevValue;
     } else if (!playersInitialized) {
       let savedName = null;
@@ -841,8 +848,22 @@
     maxWeeklyInput.value = existing.maxweekly || '';
   }
 
+  const subNameInput = document.getElementById('subNameInput');
   nameSelect.addEventListener('change', () => {
-    if (nameSelect.value) populateFormForName(nameSelect.value);
+    if (nameSelect.value === '__sub__') {
+      subNameInput.style.display = 'block';
+      subNameInput.focus();
+      // Don't try to pre-fill a form for an as-yet-unnamed sub; reset to blank.
+      selected.clear();
+      dayChips.forEach(chip => { chip.classList.remove('selected'); chip.setAttribute('aria-checked', 'false'); });
+      noteInput.value = '';
+      maxStreakInput.value = '';
+      maxWeeklyInput.value = '';
+      setOutState(false);
+    } else {
+      subNameInput.style.display = 'none';
+      if (nameSelect.value) populateFormForName(nameSelect.value);
+    }
   });
 
   // Table headers
@@ -1245,6 +1266,13 @@
         if (isAdmin) renderAdminManagePlayers();
       }
       playersInitialized = true;
+    } else if (!playersInitialized && PLAYERS.length === 0) {
+      // Backend didn't return a player list — likely the function hasn't been
+      // redeployed with this feature yet. Fall back to a safe default so the
+      // dropdown isn't left permanently empty while that gets sorted out.
+      PLAYERS = DEFAULT_PLAYERS_FALLBACK.slice();
+      recomputeTieRank();
+      renderNameOptions();
     }
     closedDays = data.closedDays;
     actualResults = data.actualResults;
@@ -1261,9 +1289,10 @@
 
   document.getElementById('submitBtn').addEventListener('click', async () => {
     const statusMsg = document.getElementById('statusMsg');
-    const name = nameSelect.value;
+    const isSub = nameSelect.value === '__sub__';
+    const name = isSub ? subNameInput.value.trim() : nameSelect.value;
     if (!name) {
-      statusMsg.textContent = 'Choose your name first.';
+      statusMsg.textContent = isSub ? "Enter the sub's name first." : 'Choose your name first.';
       statusMsg.style.color = 'var(--clay)';
       return;
     }
@@ -1273,7 +1302,13 @@
     statusMsg.style.color = 'var(--net-gray)';
     try {
       await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value);
-      localStorage.setItem(LAST_NAME_KEY, name);
+      if (!isSub) {
+        try { localStorage.setItem(LAST_NAME_KEY, name); } catch (e) { /* ignore */ }
+      } else {
+        subNameInput.value = '';
+        subNameInput.style.display = 'none';
+        nameSelect.value = '';
+      }
       statusMsg.textContent = isOut ? `Saved — see you next week, ${name}!` : `Saved — thanks, ${name}!`;
       statusMsg.style.color = 'var(--ball-yellow)';
       await refresh();
