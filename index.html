@@ -493,7 +493,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v2.8</div>
+  <div class="version-tag">v3.0</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -552,7 +552,8 @@
 <script>
 (function() {
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const PLAYERS = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
+  let PLAYERS = []; // populated from the backend once the first load completes
+  let playersInitialized = false;
   const API_URL = '/api/availability';
   const VAPID_PUBLIC_KEY = 'BGsWtB6zkEL-X2Agy3pIeFZ0IcJA_P9AAppXnJXsw-5CsmTPM-_ckXBdQKgYnbYgn7DXcHIMt3TdF5uEEwkQRtA';
 
@@ -656,9 +657,12 @@
     return a;
   }
   const weekSeed = hashString(isoDate(weekStart));
-  const shuffledOrder = seededShuffle(PLAYERS, weekSeed);
-  const tieRank = {};
-  shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+  let tieRank = {};
+  function recomputeTieRank() {
+    const shuffledOrder = seededShuffle(PLAYERS, weekSeed);
+    tieRank = {};
+    shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+  }
 
   const weekDays = [];
   for (let i = 2; i <= 6; i++) { // Monday (+2) through Friday (+6) after that Saturday
@@ -696,17 +700,24 @@
   });
 
   const nameSelect = document.getElementById('nameInput');
-  PLAYERS.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p;
-    opt.textContent = p;
-    nameSelect.appendChild(opt);
-  });
-
   const LAST_NAME_KEY = 'tennisLastPlayerName';
-  const savedName = localStorage.getItem(LAST_NAME_KEY);
-  if (savedName && PLAYERS.includes(savedName)) {
-    nameSelect.value = savedName;
+
+  function renderNameOptions() {
+    const prevValue = nameSelect.value;
+    nameSelect.innerHTML = '<option value="" disabled selected>Choose your name…</option>';
+    PLAYERS.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      nameSelect.appendChild(opt);
+    });
+    if (prevValue && PLAYERS.includes(prevValue)) {
+      nameSelect.value = prevValue;
+    } else if (!playersInitialized) {
+      let savedName = null;
+      try { savedName = localStorage.getItem(LAST_NAME_KEY); } catch (e) { /* ignore */ }
+      if (savedName && PLAYERS.includes(savedName)) nameSelect.value = savedName;
+    }
   }
 
   let closedDays = [];
@@ -873,11 +884,11 @@
     const params = new URLSearchParams({ action: 'list', week: weekKey });
     try {
       const res = await fetch(`${API_URL}?${params.toString()}`);
-      if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, ok: false };
+      if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [], actualResults: data.actualResults || {}, ok: true };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], actualResults: data.actualResults || {}, players: data.players || null, ok: true };
     } catch (e) {
-      return { responses: [], closedDays: [], actualResults: {}, ok: false };
+      return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
     }
   }
 
@@ -900,6 +911,20 @@
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  async function addPlayerRequest(name) {
+    const params = new URLSearchParams({ action: 'addPlayer', week: weekKey, key: adminKey, name });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Add failed');
+  }
+
+  async function removePlayerRequest(name) {
+    const params = new URLSearchParams({ action: 'removePlayer', week: weekKey, key: adminKey, name });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Remove failed');
   }
 
   function slugSafe(name) {
@@ -1211,6 +1236,16 @@
       if (tag) tag.textContent = `Refresh failed at ${timeLabel} — retrying`;
       return;
     }
+    if (data.players) {
+      const changed = JSON.stringify(data.players) !== JSON.stringify(PLAYERS);
+      if (changed) {
+        PLAYERS = data.players;
+        recomputeTieRank();
+        renderNameOptions();
+        if (isAdmin) renderAdminManagePlayers();
+      }
+      playersInitialized = true;
+    }
     closedDays = data.closedDays;
     actualResults = data.actualResults;
     lastResponses = data.responses;
@@ -1271,6 +1306,14 @@
           <button class="primary admin-btn" id="enablePushBtn">Enable notifications on this device</button>
           <div class="status-msg admin-status" id="pushStatusMsg"></div>
 
+          <label class="field-label" style="margin-top:22px;">Manage players</label>
+          <div id="managePlayersSlot"></div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <input type="text" id="newPlayerInput" placeholder="New player name" style="flex:1; margin-bottom:0;">
+            <button class="primary admin-btn" id="addPlayerBtn" style="width:auto; padding:0 16px;">Add</button>
+          </div>
+          <div class="status-msg admin-status" id="managePlayersStatusMsg"></div>
+
           <label class="field-label" style="margin-top:22px;">Mark club-closed days this week</label>
           <div class="day-grid" id="adminDayGrid"></div>
           <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
@@ -1285,6 +1328,27 @@
           </div>
         </div>
       </div>`;
+
+    renderAdminManagePlayers();
+
+    document.getElementById('addPlayerBtn').addEventListener('click', async () => {
+      const input = document.getElementById('newPlayerInput');
+      const msg = document.getElementById('managePlayersStatusMsg');
+      const name = input.value.trim();
+      if (!name) { msg.textContent = 'Enter a name first.'; msg.style.color = 'var(--clay)'; return; }
+      msg.textContent = 'Adding...';
+      msg.style.color = 'var(--net-gray)';
+      try {
+        await addPlayerRequest(name);
+        input.value = '';
+        msg.textContent = `Added ${name}.`;
+        msg.style.color = 'var(--ball-yellow)';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--clay)';
+      }
+    });
 
     document.getElementById('adminToggleHeader').addEventListener('click', () => {
       const body = document.getElementById('adminCardBody');
@@ -1409,6 +1473,36 @@
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
       }
+    });
+  }
+
+  function renderAdminManagePlayers() {
+    const slot = document.getElementById('managePlayersSlot');
+    if (!slot) return;
+    slot.innerHTML = PLAYERS.map(name => `
+      <span style="display:inline-flex; align-items:center; gap:5px; background:var(--court-navy-deep); border:1px solid var(--line); border-radius:100px; padding:5px 6px 5px 12px; margin:0 6px 6px 0; font-size:13px;">
+        ${escapeHtml(name)}
+        <button type="button" class="remove-player-btn" data-name="${escapeHtml(name)}" style="background:var(--clay); color:var(--chalk); border:none; border-radius:50%; width:18px; height:18px; font-size:11px; line-height:1; cursor:pointer;">×</button>
+      </span>
+    `).join('');
+
+    slot.querySelectorAll('.remove-player-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.name;
+        if (!confirm(`Remove ${name} from the player list? Their past responses stay on record, but they won't appear in the dropdown anymore.`)) return;
+        const msg = document.getElementById('managePlayersStatusMsg');
+        msg.textContent = 'Removing...';
+        msg.style.color = 'var(--net-gray)';
+        try {
+          await removePlayerRequest(name);
+          msg.textContent = `Removed ${name}.`;
+          msg.style.color = 'var(--ball-yellow)';
+          await refresh();
+        } catch (e) {
+          msg.textContent = 'Error: ' + e.message;
+          msg.style.color = 'var(--clay)';
+        }
+      });
     });
   }
 
