@@ -303,6 +303,8 @@
     vertical-align: middle;
   }
   tr.is-out { opacity: 0.55; }
+  tr.is-self { background: rgba(215,242,60,0.08); }
+  tr.is-self .name-col { color: var(--ball-yellow); font-weight: 700; }
 
   button.primary {
     background: var(--ball-yellow);
@@ -493,7 +495,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.3</div>
+  <div class="version-tag">v3.4</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -864,6 +866,7 @@
       subNameInput.style.display = 'none';
       if (nameSelect.value) populateFormForName(nameSelect.value);
     }
+    if (lastResponses.length > 0 || closedDays.length > 0) renderBoard(lastResponses);
   });
 
   // Table headers
@@ -1102,6 +1105,13 @@
     return lines.join('\n');
   }
 
+  function highlightNames(names, selectedName) {
+    return names.map(n => n === selectedName
+      ? `<strong style="color:var(--ball-yellow);">${escapeHtml(n)}</strong>`
+      : escapeHtml(n)
+    ).join(', ');
+  }
+
   function renderBoard(responses) {
     const tbody = document.getElementById('tbody');
     const countRow = document.getElementById('countRow');
@@ -1126,6 +1136,8 @@
     scoreboard.style.display = 'table';
     emptyState.style.display = 'none';
 
+    const selectedName = (nameSelect.value && nameSelect.value !== '__sub__') ? nameSelect.value : null;
+
     tbody.innerHTML = responses.map(r => {
       const cells = weekDays.map((d, idx) => {
         if (closedDays.includes(idx)) return '<td><span class="mark-closed">CLOSED</span></td>';
@@ -1135,7 +1147,9 @@
       const nameCell = r.out
         ? `${escapeHtml(r.name)}<span class="out-badge">OUT</span>`
         : escapeHtml(r.name);
-      return `<tr class="${r.out ? 'is-out' : ''}"><td class="name-col">${nameCell}</td>${cells}<td class="note-cell">${escapeHtml(r.note || '')}</td></tr>`;
+      const isSelf = selectedName && r.name === selectedName;
+      const rowClasses = [r.out ? 'is-out' : '', isSelf ? 'is-self' : ''].filter(Boolean).join(' ');
+      return `<tr class="${rowClasses}"><td class="name-col">${nameCell}</td>${cells}<td class="note-cell">${escapeHtml(r.note || '')}</td></tr>`;
     }).join('');
 
     const counts = weekDays.map((d, idx) => closedDays.includes(idx) ? 0 : responses.filter(r => r.days.includes(idx)).length);
@@ -1178,20 +1192,22 @@
       }
       if (plan.playing.length >= 4) {
         const startLabel = getStartTime(plan);
-        const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${escapeHtml(plan.alternates.map(r => r.name).join(', '))})</span>` : '';
+        const isSelfPlaying = selectedName && plan.playing.some(r => r.name === selectedName);
+        const altNote = plan.alternates.length > 0 ? ` <span style="color:var(--net-gray)">(sitting out: ${highlightNames(plan.alternates.map(r => r.name), selectedName)})</span>` : '';
         const pairs = suggestPairs(plan.playing);
         const pairLine = pairs
           ? `<div style="font-size:11px;color:var(--net-gray);margin:2px 0 4px 0;">Suggested teams: ${escapeHtml(pairs[0].join(' & '))} <span style="color:var(--ball-yellow-dim);">vs</span> ${escapeHtml(pairs[1].join(' & '))}</div>`
           : '';
-        return `<div class="txt-sub"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${escapeHtml(plan.playing.map(r => r.name).join(', '))}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}</div>`;
+        const lineStyle = isSelfPlaying ? 'border-left:3px solid var(--ball-yellow); padding-left:8px; background:rgba(215,242,60,0.06); border-radius:4px;' : '';
+        return `<div class="txt-sub" style="${lineStyle}"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${highlightNames(plan.playing.map(r => r.name), selectedName)}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}</div>`;
       }
       if (plan.available.length === 0) {
         return `<div class="txt-sub">${dateLabel}: no one available</div>`;
       }
       if (plan.cappedOut.length > 0) {
-        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${escapeHtml(plan.cappedOut.map(r => r.name).join(', '))} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)</div>`;
+        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)</div>`;
       }
-      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${escapeHtml(plan.available.map(r => r.name).join(', '))}</div>`;
+      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}</div>`;
     }).join('');
 
     const anyPlayableDay = dayPlans.some(p => p.playing.length >= 4);
