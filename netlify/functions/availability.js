@@ -61,6 +61,44 @@ async function getPlayers(store) {
   return DEFAULT_PLAYERS;
 }
 
+function isIdenticalResponse(previous, value) {
+  if (!previous) return false;
+  const sortedPrev = [...(previous.days || [])].sort();
+  const sortedNew = [...value.days].sort();
+  return (
+    JSON.stringify(sortedPrev) === JSON.stringify(sortedNew) &&
+    !!previous.out === !!value.out &&
+    (previous.note || '') === (value.note || '') &&
+    (previous.maxstreak ?? null) === value.maxstreak &&
+    (previous.maxweekly ?? null) === value.maxweekly
+  );
+}
+
+function dayLabel(week, idx) {
+  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const d = new Date(week + "T00:00:00");
+  d.setDate(d.getDate() + idx + 2); // week is the opening Saturday; Monday = +2 ... Friday = +6
+  return `${DOW[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function describeChange(week, previous, value) {
+  if (!previous) return null; // brand new submission, no diff to describe
+  const parts = [];
+  if (!previous.out && value.out) {
+    parts.push("going OUT for the week");
+  } else if (previous.out && !value.out) {
+    parts.push("back IN (was out)");
+  }
+  if (!value.out) {
+    const prevDays = previous.days || [];
+    const added = value.days.filter((d) => !prevDays.includes(d));
+    const removed = prevDays.filter((d) => !value.days.includes(d));
+    if (added.length) parts.push(`added ${added.map((i) => dayLabel(week, i)).join(", ")}`);
+    if (removed.length) parts.push(`removed ${removed.map((i) => dayLabel(week, i)).join(", ")}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
@@ -116,17 +154,18 @@ export default async (req, context) => {
     };
     await store.setJSON(respKey, value);
 
-    let message = `${name} updated their availability for the week of ${week}.`;
-    if (previous) {
-      const justWentOut = !previous.out && value.out;
-      const droppedDays = (previous.days || []).filter((d) => !value.days.includes(d));
-      if (justWentOut) {
-        message = `${name} just went OUT for the week — the lineup will auto-adjust who's playing.`;
-      } else if (!value.out && droppedDays.length > 0) {
-        message = `${name} dropped some previously-marked days — check if the lineup shifted.`;
+    if (!isIdenticalResponse(previous, value)) {
+      const changeDesc = describeChange(week, previous, value);
+      let message;
+      if (!previous) {
+        message = `${name} submitted their availability for the week of ${week}.`;
+      } else if (changeDesc) {
+        message = `${name} updated: ${changeDesc}.`;
+      } else {
+        message = `${name} updated their notes or limits (no day changes).`;
       }
+      context.waitUntil(notifySubscribers(store, message));
     }
-    context.waitUntil(notifySubscribers(store, message));
     return json({ ok: true });
   }
 
