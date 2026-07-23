@@ -61,8 +61,8 @@ async function getPlayers(store) {
   return DEFAULT_PLAYERS;
 }
 
-async function getPayments(store) {
-  const payments = await store.get("payments", { type: "json" });
+async function getPayments(store, season) {
+  const payments = await store.get(`payments:${season}`, { type: "json" });
   return payments || {}; // missing entries just mean "use the default" client-side
 }
 
@@ -230,18 +230,22 @@ export default async (req, context) => {
   }
 
   if (action === "getPayments") {
-    const payments = await getPayments(store);
+    const season = url.searchParams.get("season");
+    if (!season) return json({ error: "missing season" }, 400);
+    const payments = await getPayments(store, season);
     return json({ payments });
   }
 
   if (action === "setPayments") {
     const key = url.searchParams.get("key");
     if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const season = url.searchParams.get("season");
+    if (!season) return json({ error: "missing season" }, 400);
     const paymentsParam = url.searchParams.get("payments");
     if (!paymentsParam) return json({ error: "missing payments" }, 400);
     let payments;
     try { payments = JSON.parse(paymentsParam); } catch (e) { return json({ error: "invalid payments" }, 400); }
-    await store.setJSON("payments", payments);
+    await store.setJSON(`payments:${season}`, payments);
     return json({ ok: true, payments });
   }
 
