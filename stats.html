@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v1.4</div>
+  <div class="version-tag">v1.7</div>
 </div>
 
 <div class="wrap">
@@ -174,7 +174,10 @@
   async function fetchWeek(weekKey) {
     try {
       const params = new URLSearchParams({ action: 'list', week: weekKey });
-      const res = await fetch(`${API_URL}?${params.toString()}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`${API_URL}?${params.toString()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (!res.ok) return null;
       return await res.json();
     } catch (e) {
@@ -260,10 +263,13 @@
     return '$' + n.toFixed(2).replace(/\.00$/, '');
   }
 
-  async function fetchPayments() {
+  async function fetchPayments(seasonYear) {
     try {
-      const params = new URLSearchParams({ action: 'getPayments' });
-      const res = await fetch(`${API_URL}?${params.toString()}`);
+      const params = new URLSearchParams({ action: 'getPayments', season: String(seasonYear) });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`${API_URL}?${params.toString()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (!res.ok) return {};
       const data = await res.json();
       return data.payments || {};
@@ -300,13 +306,15 @@
     // Season nav links
     const navSlot = document.getElementById('seasonNav');
     const nextIsFuture = (seasonYear + 1) > currentSeasonYear;
+    const seasonLabel = `${seasonYear}–${String(seasonYear + 1).slice(2)}${isCurrentSeason ? ' (current)' : ''}`;
     navSlot.innerHTML = `
       <a href="?season=${seasonYear - 1}">← ${seasonYear - 1}–${String(seasonYear).slice(2)}</a>
+      <strong style="color:var(--chalk); font-family:'Space Mono',monospace; font-size:12px; margin:0 6px;">${seasonLabel}</strong>
       ${nextIsFuture ? `<span class="disabled">${seasonYear + 1}–${String(seasonYear + 2).slice(2)} →</span>` : `<a href="?season=${seasonYear + 1}">${seasonYear + 1}–${String(seasonYear + 2).slice(2)} →</a>`}
     `;
 
     const weekKeyForFetch = isoDate(currentWeekStart);
-    const [currentData, payments] = await Promise.all([fetchWeek(weekKeyForFetch), fetchPayments()]);
+    const [currentData, payments] = await Promise.all([fetchWeek(weekKeyForFetch), fetchPayments(seasonYear)]);
     const players = (currentData && currentData.players && currentData.players.length > 0)
       ? currentData.players
       : DEFAULT_PLAYERS_FALLBACK;
@@ -324,9 +332,14 @@
     let assumedWeeksCount = 0;
     let realWeeksCount = 0;
 
-    for (const ws of weekStarts) {
+    const weekDataList = await Promise.all(weekStarts.map(ws => {
       const wk = isoDate(ws);
-      const data = (wk === currentWeekKey) ? currentData : await fetchWeek(wk);
+      return (wk === currentWeekKey) ? Promise.resolve(currentData) : fetchWeek(wk);
+    }));
+
+    weekStarts.forEach((ws, i) => {
+      const wk = isoDate(ws);
+      const data = weekDataList[i];
       const hasAnyData = data && (
         (data.responses && data.responses.length > 0) ||
         (data.closedDays && data.closedDays.length > 0) ||
@@ -334,29 +347,41 @@
       );
       if (!hasAnyData) {
         assumedWeeksCount++;
-        continue;
+        return;
       }
       realWeeksCount++;
       const weekTally = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players);
       Object.entries(weekTally).forEach(([name, count]) => {
         realTally[name] = (realTally[name] || 0) + count;
       });
-    }
+    });
 
-    const finalStats = players.map(name => {
+    // Show anyone who has real recorded games this season, even if they've
+    // since been removed from the current roster — their history shouldn't
+    // vanish just because the roster changed later. Conversely, someone
+    // added to the roster recently only gets credit for real weeks they
+    // actually appear in, never for estimated pre-tracking weeks in a
+    // season before they joined.
+    const displayRoster = Array.from(new Set([...players, ...Object.keys(realTally)]));
+
+    const finalStats = displayRoster.map(name => {
       const paymentInfo = payments[name] || {};
       const seasonFee = paymentInfo.amount || DEFAULT_SEASON_FEE;
       const months = paymentInfo.months || 12;
+      const isCurrentRosterMember = players.includes(name);
       // Weeks before real tracking began have no data at all, so they're
-      // estimated — but scaled to how much of the season this person
-      // actually paid for, not assumed at the full 12-month rate for everyone.
-      const personAssumedBaseline = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK * (months / 12));
+      // estimated — but only for people currently on the roster (we have no
+      // record of who was actually around during those untracked weeks),
+      // and scaled to how much of the season this person paid for.
+      const personAssumedBaseline = isCurrentRosterMember
+        ? Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK * (months / 12))
+        : 0;
       const total = personAssumedBaseline + (realTally[name] || 0);
       const breakevenGames = Math.ceil(seasonFee / DAILY_RATE);
       const costPerGame = total > 0 ? seasonFee / total : null;
       const payPerDayEquivalent = total * DAILY_RATE;
       const savings = payPerDayEquivalent - seasonFee;
-      return { name, total, seasonFee, months, breakevenGames, costPerGame, savings };
+      return { name, total, seasonFee, months, breakevenGames, costPerGame, savings, isCurrentRosterMember };
     }).sort((a, b) => b.total - a.total);
 
     const assumedBaselineTotal = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK);
@@ -375,9 +400,11 @@
       games are estimated at ${ASSUMED_GAMES_PER_WEEK}/week (~${assumedBaselineTotal} games at a full
       12-month rate), scaled down for anyone paying for fewer months. For the
       ${realWeeksCount} week${realWeeksCount === 1 ? '' : 's'} since, games reflect actual recorded
-      lineups. Cost and break-even use each person's own season payment and months paid
-      (defaults to $${DEFAULT_SEASON_FEE} / 12 months unless set otherwise in the admin panel)
-      against the $${DAILY_RATE}/day drop-in rate.
+      lineups. Cost and break-even use each person's own season payment and months paid for
+      <em>that season</em> (defaults to $${DEFAULT_SEASON_FEE} / 12 months unless set otherwise
+      in the admin panel). Players who've since left the roster still show their real recorded
+      games for seasons they played in — just no pre-tracking estimate, since there's no way to
+      know how long they'd been part of the group before tracking began.
     `;
     methodologyCard.style.display = 'block';
 
@@ -396,9 +423,12 @@
       const monthsNote = s.months !== 12
         ? ` <span style="color:var(--net-gray); font-weight:400; font-size:11px;">(${s.months}mo)</span>`
         : '';
+      const formerNote = !s.isCurrentRosterMember
+        ? ` <span style="color:var(--net-gray); font-weight:400; font-size:11px;">(no longer on roster)</span>`
+        : '';
       return `<tr>
         <td class="rank ${rankClass}">${rank}</td>
-        <td class="name-cell">${escapeHtml(s.name)}${monthsNote}</td>
+        <td class="name-cell">${escapeHtml(s.name)}${monthsNote}${formerNote}</td>
         <td class="num">${s.total}</td>
         <td class="num">${costCell}</td>
         <td class="num">${savingsCell}</td>
@@ -410,7 +440,12 @@
     document.getElementById('statsTable').style.display = 'table';
   }
 
-  run();
+  run().catch((e) => {
+    console.error('Season Stats failed:', e);
+    const loadingMsg = document.getElementById('loadingMsg');
+    loadingMsg.textContent = "Couldn't load this season's stats — try refreshing, or check back in a bit.";
+    loadingMsg.style.color = 'var(--clay)';
+  });
 })();
 </script>
 </body>

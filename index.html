@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.6</div>
+  <div class="version-tag">v3.7</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -646,6 +646,12 @@
     const start = new Date(today);
     start.setDate(today.getDate() - daysSinceSaturday);
     return start;
+  }
+
+  function getCurrentSeasonYear() {
+    // Season runs June 1 through the following May 31 (matches stats.html).
+    const today = new Date();
+    return today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
   }
 
   function isoDate(d) {
@@ -973,14 +979,14 @@
   }
 
   async function fetchPayments() {
-    const params = new URLSearchParams({ action: 'getPayments', week: weekKey });
+    const params = new URLSearchParams({ action: 'getPayments', season: String(getCurrentSeasonYear()) });
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     return data.payments || {};
   }
 
   async function savePaymentsRequest(paymentsMap) {
-    const params = new URLSearchParams({ action: 'setPayments', week: weekKey, key: adminKey, payments: JSON.stringify(paymentsMap) });
+    const params = new URLSearchParams({ action: 'setPayments', season: String(getCurrentSeasonYear()), key: adminKey, payments: JSON.stringify(paymentsMap) });
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
@@ -1400,7 +1406,7 @@
           </div>
           <div class="status-msg admin-status" id="managePlayersStatusMsg"></div>
 
-          <label class="field-label" style="margin-top:22px;">Manage payments <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(defaults to $795 / 12 months — only change exceptions)</span></label>
+          <label class="field-label" style="margin-top:22px;">Manage payments for the ${getCurrentSeasonYear()}–${String(getCurrentSeasonYear() + 1).slice(2)} season <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(defaults to $795 / 12 months — only change exceptions)</span></label>
           <div id="managePaymentsSlot"></div>
           <button class="primary admin-btn" id="savePaymentsBtn" style="margin-top:8px;">Save payments</button>
           <div class="status-msg admin-status" id="managePaymentsStatusMsg"></div>
