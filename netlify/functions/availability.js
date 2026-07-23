@@ -61,6 +61,11 @@ async function getPlayers(store) {
   return DEFAULT_PLAYERS;
 }
 
+async function getPayments(store) {
+  const payments = await store.get("payments", { type: "json" });
+  return payments || {}; // missing entries just mean "use the default" client-side
+}
+
 function isIdenticalResponse(previous, value) {
   if (!previous) return false;
   const sortedPrev = [...(previous.days || [])].sort();
@@ -103,7 +108,7 @@ export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer"];
+  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments"];
   if (!week && !weekExemptActions.includes(action)) return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
@@ -222,6 +227,22 @@ export default async (req, context) => {
     const players = (await getPlayers(store)).filter((p) => p !== name);
     await store.setJSON("players", players);
     return json({ ok: true, players });
+  }
+
+  if (action === "getPayments") {
+    const payments = await getPayments(store);
+    return json({ payments });
+  }
+
+  if (action === "setPayments") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const paymentsParam = url.searchParams.get("payments");
+    if (!paymentsParam) return json({ error: "missing payments" }, 400);
+    let payments;
+    try { payments = JSON.parse(paymentsParam); } catch (e) { return json({ error: "invalid payments" }, 400); }
+    await store.setJSON("payments", payments);
+    return json({ ok: true, payments });
   }
 
   return json({ error: "unknown action" }, 400);
