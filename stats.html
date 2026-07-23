@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v1.7</div>
+  <div class="version-tag">v1.8</div>
 </div>
 
 <div class="wrap">
@@ -188,7 +188,8 @@
   // Reconstructs who actually played each day of a given week — same rules
   // as the live scheduler (hard caps, weekly-seeded tie-breaks, closed days,
   // admin-confirmed actual results taking priority over the projection).
-  function tallyWeek(weekKey, responses, closedDays, actualResults, players) {
+  function tallyWeek(weekKey, responses, closedDays, actualResults, players, now) {
+    const CUTOFF_HOUR = 9;
     const weekDays = [];
     const start = new Date(weekKey + 'T00:00:00');
     for (let i = 2; i <= 6; i++) {
@@ -207,10 +208,24 @@
     responses.forEach(r => { playCount[r.name] = 0; currentStreak[r.name] = 0; lastPlayedIdx[r.name] = -99; });
 
     const tally = {};
+    const todayDateOnly = new Date(now);
+    todayDateOnly.setHours(0, 0, 0, 0);
 
     weekDays.forEach((d, idx) => {
       if (closedDays.includes(idx)) return;
       const actualNames = actualResults[String(idx)];
+
+      if (!actualNames) {
+        // No admin-confirmed result — only count a projected day once it's
+        // actually happened: any earlier calendar day counts, today counts
+        // once it's past the 9am cutoff, anything later doesn't count yet.
+        const dayDateOnly = new Date(d);
+        dayDateOnly.setHours(0, 0, 0, 0);
+        const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
+        const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= CUTOFF_HOUR;
+        if (!isPastDay && !isTodayPastCutoff) return;
+      }
+
       let playing;
       let playingNames;
 
@@ -350,7 +365,7 @@
         return;
       }
       realWeeksCount++;
-      const weekTally = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players);
+      const weekTally = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players, today);
       Object.entries(weekTally).forEach(([name, count]) => {
         realTally[name] = (realTally[name] || 0) + count;
       });
@@ -404,7 +419,10 @@
       <em>that season</em> (defaults to $${DEFAULT_SEASON_FEE} / 12 months unless set otherwise
       in the admin panel). Players who've since left the roster still show their real recorded
       games for seasons they played in — just no pre-tracking estimate, since there's no way to
-      know how long they'd been part of the group before tracking began.
+      know how long they'd been part of the group before tracking began. This week only counts
+      days that have actually happened — a scheduled day only counts once it's past (or, for
+      today, once it's past 9am) — unless the admin has recorded that day's actual result, which
+      always counts immediately regardless of timing.
     `;
     methodologyCard.style.display = 'block';
 
