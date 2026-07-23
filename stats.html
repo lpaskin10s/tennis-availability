@@ -50,6 +50,15 @@
     margin: 6px 0 4px;
   }
   .sub { color: var(--net-gray); font-size: 13px; font-family: 'Space Mono', monospace; }
+  .season-nav a {
+    color: var(--ball-yellow);
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    text-decoration: none;
+    margin: 0 10px;
+  }
+  .season-nav a:hover { text-decoration: underline; }
+  .season-nav .disabled { color: var(--net-gray); opacity: 0.4; font-size: 12px; font-family: 'Space Mono', monospace; margin: 0 10px; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 0; }
   .card {
     background: var(--panel);
@@ -92,7 +101,8 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
-  <div class="version-tag">v1.3</div>
+  <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
+  <div class="version-tag">v1.4</div>
 </div>
 
 <div class="wrap">
@@ -267,20 +277,43 @@
     const currentWeekStart = getWeekStartFor(today);
     const currentWeekKey = isoDate(currentWeekStart);
 
-    const [currentData, payments] = await Promise.all([fetchWeek(currentWeekKey), fetchPayments()]);
+    // Season runs June 1 through the following May 31. In Jan–May, "today's"
+    // season actually started the PREVIOUS June, not this year's.
+    const currentSeasonYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestedSeason = parseInt(urlParams.get('season'), 10);
+    const seasonYear = Number.isInteger(requestedSeason) ? requestedSeason : currentSeasonYear;
+    const isCurrentSeason = seasonYear === currentSeasonYear;
+
+    const seasonStartWeek = getWeekStartFor(new Date(seasonYear, 5, 1)); // June 1
+
+    let endBoundary;
+    if (isCurrentSeason) {
+      endBoundary = currentWeekStart;
+    } else {
+      const nextSeasonStart = getWeekStartFor(new Date(seasonYear + 1, 5, 1));
+      endBoundary = new Date(nextSeasonStart);
+      endBoundary.setDate(endBoundary.getDate() - 7);
+    }
+
+    // Season nav links
+    const navSlot = document.getElementById('seasonNav');
+    const nextIsFuture = (seasonYear + 1) > currentSeasonYear;
+    navSlot.innerHTML = `
+      <a href="?season=${seasonYear - 1}">← ${seasonYear - 1}–${String(seasonYear).slice(2)}</a>
+      ${nextIsFuture ? `<span class="disabled">${seasonYear + 1}–${String(seasonYear + 2).slice(2)} →</span>` : `<a href="?season=${seasonYear + 1}">${seasonYear + 1}–${String(seasonYear + 2).slice(2)} →</a>`}
+    `;
+
+    const weekKeyForFetch = isoDate(currentWeekStart);
+    const [currentData, payments] = await Promise.all([fetchWeek(weekKeyForFetch), fetchPayments()]);
     const players = (currentData && currentData.players && currentData.players.length > 0)
       ? currentData.players
       : DEFAULT_PLAYERS_FALLBACK;
 
-    // Season runs June 1 through the following May 31. In Jan–May, the
-    // current season actually started the PREVIOUS June, not this year's —
-    // otherwise this would compute a season-start date still in the future.
-    const seasonYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
-    const seasonStartWeek = getWeekStartFor(new Date(seasonYear, 5, 1)); // June 1
-
     const weekStarts = [];
     let cursor = new Date(seasonStartWeek);
-    while (cursor <= currentWeekStart) {
+    while (cursor <= endBoundary) {
       weekStarts.push(new Date(cursor));
       cursor = new Date(cursor);
       cursor.setDate(cursor.getDate() + 7);
@@ -329,9 +362,10 @@
     const assumedBaselineTotal = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK);
 
     // Render methodology
-    const opts = { month: 'short', day: 'numeric' };
+    const opts = { month: 'short', day: 'numeric', year: 'numeric' };
+    const rangeEndLabel = isCurrentSeason ? today : endBoundary;
     document.getElementById('seasonRangeLabel').textContent =
-      `${seasonStartWeek.toLocaleDateString(undefined, opts)} – ${today.toLocaleDateString(undefined, opts)}`;
+      `${seasonStartWeek.toLocaleDateString(undefined, opts)} – ${rangeEndLabel.toLocaleDateString(undefined, opts)}${isCurrentSeason ? ' (in progress)' : ''}`;
 
     const methodologyCard = document.getElementById('methodologyCard');
     const methodologyText = document.getElementById('methodologyText');
