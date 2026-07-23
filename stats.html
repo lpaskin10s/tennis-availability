@@ -92,7 +92,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
-  <div class="version-tag">v1.2</div>
+  <div class="version-tag">v1.3</div>
 </div>
 
 <div class="wrap">
@@ -272,7 +272,11 @@
       ? currentData.players
       : DEFAULT_PLAYERS_FALLBACK;
 
-    const seasonStartWeek = getWeekStartFor(new Date(today.getFullYear(), 5, 1)); // June 1
+    // Season runs June 1 through the following May 31. In Jan–May, the
+    // current season actually started the PREVIOUS June, not this year's —
+    // otherwise this would compute a season-start date still in the future.
+    const seasonYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
+    const seasonStartWeek = getWeekStartFor(new Date(seasonYear, 5, 1)); // June 1
 
     const weekStarts = [];
     let cursor = new Date(seasonStartWeek);
