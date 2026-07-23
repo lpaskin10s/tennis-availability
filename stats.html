@@ -92,7 +92,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
-  <div class="version-tag">v1.0</div>
+  <div class="version-tag">v1.2</div>
 </div>
 
 <div class="wrap">
@@ -123,9 +123,8 @@
 <script>
 (function() {
   const API_URL = '/api/availability';
-  const SEASON_FEE = 795;
+  const DEFAULT_SEASON_FEE = 795;
   const DAILY_RATE = 20;
-  const BREAKEVEN_GAMES = Math.ceil(SEASON_FEE / DAILY_RATE);
   const ASSUMED_GAMES_PER_WEEK = 2.5;
   const DEFAULT_PLAYERS_FALLBACK = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
 
@@ -251,12 +250,24 @@
     return '$' + n.toFixed(2).replace(/\.00$/, '');
   }
 
+  async function fetchPayments() {
+    try {
+      const params = new URLSearchParams({ action: 'getPayments' });
+      const res = await fetch(`${API_URL}?${params.toString()}`);
+      if (!res.ok) return {};
+      const data = await res.json();
+      return data.payments || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
   async function run() {
     const today = new Date();
     const currentWeekStart = getWeekStartFor(today);
     const currentWeekKey = isoDate(currentWeekStart);
 
-    const currentData = await fetchWeek(currentWeekKey);
+    const [currentData, payments] = await Promise.all([fetchWeek(currentWeekKey), fetchPayments()]);
     const players = (currentData && currentData.players && currentData.players.length > 0)
       ? currentData.players
       : DEFAULT_PLAYERS_FALLBACK;
@@ -295,15 +306,23 @@
       });
     }
 
-    const assumedBaselineTotal = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK);
-
     const finalStats = players.map(name => {
-      const total = assumedBaselineTotal + (realTally[name] || 0);
-      const costPerGame = total > 0 ? SEASON_FEE / total : null;
+      const paymentInfo = payments[name] || {};
+      const seasonFee = paymentInfo.amount || DEFAULT_SEASON_FEE;
+      const months = paymentInfo.months || 12;
+      // Weeks before real tracking began have no data at all, so they're
+      // estimated — but scaled to how much of the season this person
+      // actually paid for, not assumed at the full 12-month rate for everyone.
+      const personAssumedBaseline = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK * (months / 12));
+      const total = personAssumedBaseline + (realTally[name] || 0);
+      const breakevenGames = Math.ceil(seasonFee / DAILY_RATE);
+      const costPerGame = total > 0 ? seasonFee / total : null;
       const payPerDayEquivalent = total * DAILY_RATE;
-      const savings = payPerDayEquivalent - SEASON_FEE;
-      return { name, total, costPerGame, savings };
+      const savings = payPerDayEquivalent - seasonFee;
+      return { name, total, seasonFee, months, breakevenGames, costPerGame, savings };
     }).sort((a, b) => b.total - a.total);
+
+    const assumedBaselineTotal = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK);
 
     // Render methodology
     const opts = { month: 'short', day: 'numeric' };
@@ -315,10 +334,12 @@
     methodologyText.innerHTML = `
       <strong>How this is calculated:</strong> season runs from June 1. For the
       ${assumedWeeksCount} week${assumedWeeksCount === 1 ? '' : 's'} before detailed tracking was in place,
-      games are estimated at ${ASSUMED_GAMES_PER_WEEK}/week per person (~${assumedBaselineTotal} games,
-      same for everyone). For the ${realWeeksCount} week${realWeeksCount === 1 ? '' : 's'} since, games reflect
-      actual recorded lineups. Assumes everyone's on the $${SEASON_FEE} season pass — break-even vs. the
-      $${DAILY_RATE}/day rate is ${BREAKEVEN_GAMES} games.
+      games are estimated at ${ASSUMED_GAMES_PER_WEEK}/week (~${assumedBaselineTotal} games at a full
+      12-month rate), scaled down for anyone paying for fewer months. For the
+      ${realWeeksCount} week${realWeeksCount === 1 ? '' : 's'} since, games reflect actual recorded
+      lineups. Cost and break-even use each person's own season payment and months paid
+      (defaults to $${DEFAULT_SEASON_FEE} / 12 months unless set otherwise in the admin panel)
+      against the $${DAILY_RATE}/day drop-in rate.
     `;
     methodologyCard.style.display = 'block';
 
@@ -331,12 +352,15 @@
       const savingsCell = s.total > 0
         ? `<span class="${s.savings >= 0 ? 'savings-positive' : 'savings-negative'}">${s.savings >= 0 ? '+' : '−'}${fmtMoney(Math.abs(s.savings))}</span>`
         : '—';
-      const breakevenCell = s.total >= BREAKEVEN_GAMES
-        ? `<span class="breakeven-done">✓ broke even ${s.total - BREAKEVEN_GAMES > 0 ? (s.total - BREAKEVEN_GAMES) + ' ago' : ''}</span>`
-        : `<span class="breakeven-pending">${BREAKEVEN_GAMES - s.total} to go</span>`;
+      const breakevenCell = s.total >= s.breakevenGames
+        ? `<span class="breakeven-done">✓ broke even ${s.total - s.breakevenGames > 0 ? (s.total - s.breakevenGames) + ' ago' : ''}</span>`
+        : `<span class="breakeven-pending">${s.breakevenGames - s.total} to go</span>`;
+      const monthsNote = s.months !== 12
+        ? ` <span style="color:var(--net-gray); font-weight:400; font-size:11px;">(${s.months}mo)</span>`
+        : '';
       return `<tr>
         <td class="rank ${rankClass}">${rank}</td>
-        <td class="name-cell">${escapeHtml(s.name)}</td>
+        <td class="name-cell">${escapeHtml(s.name)}${monthsNote}</td>
         <td class="num">${s.total}</td>
         <td class="num">${costCell}</td>
         <td class="num">${savingsCell}</td>

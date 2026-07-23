@@ -290,6 +290,23 @@
     font-weight: 700;
   }
 
+  .payment-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .payment-row .payment-name { flex: 1; font-size: 13px; }
+  .payment-row input {
+    width: 72px;
+    margin-bottom: 0;
+    padding: 6px 8px;
+    font-size: 13px;
+    text-align: right;
+  }
+  .payment-row .payment-label { font-size: 10px; color: var(--net-gray); font-family: 'Space Mono', monospace; }
+
   .out-badge {
     display: inline-block;
     margin-left: 6px;
@@ -495,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.5</div>
+  <div class="version-tag">v3.6</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -955,6 +972,20 @@
     if (!data.ok) throw new Error(data.error || 'Remove failed');
   }
 
+  async function fetchPayments() {
+    const params = new URLSearchParams({ action: 'getPayments', week: weekKey });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    return data.payments || {};
+  }
+
+  async function savePaymentsRequest(paymentsMap) {
+    const params = new URLSearchParams({ action: 'setPayments', week: weekKey, key: adminKey, payments: JSON.stringify(paymentsMap) });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
   function slugSafe(name) {
     return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
@@ -1283,7 +1314,7 @@
         PLAYERS = data.players;
         recomputeTieRank();
         renderNameOptions();
-        if (isAdmin) renderAdminManagePlayers();
+        if (isAdmin) { renderAdminManagePlayers(); renderAdminManagePayments(); }
       }
       playersInitialized = true;
     } else if (!playersInitialized && PLAYERS.length === 0) {
@@ -1369,6 +1400,11 @@
           </div>
           <div class="status-msg admin-status" id="managePlayersStatusMsg"></div>
 
+          <label class="field-label" style="margin-top:22px;">Manage payments <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(defaults to $795 / 12 months — only change exceptions)</span></label>
+          <div id="managePaymentsSlot"></div>
+          <button class="primary admin-btn" id="savePaymentsBtn" style="margin-top:8px;">Save payments</button>
+          <div class="status-msg admin-status" id="managePaymentsStatusMsg"></div>
+
           <label class="field-label" style="margin-top:22px;">Mark club-closed days this week</label>
           <div class="day-grid" id="adminDayGrid"></div>
           <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
@@ -1385,6 +1421,7 @@
       </div>`;
 
     renderAdminManagePlayers();
+    renderAdminManagePayments();
 
     document.getElementById('addPlayerBtn').addEventListener('click', async () => {
       const input = document.getElementById('newPlayerInput');
@@ -1399,6 +1436,27 @@
         msg.textContent = `Added ${name}.`;
         msg.style.color = 'var(--ball-yellow)';
         await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--clay)';
+      }
+    });
+
+    document.getElementById('savePaymentsBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('managePaymentsStatusMsg');
+      msg.textContent = 'Saving...';
+      msg.style.color = 'var(--net-gray)';
+      const paymentsMap = {};
+      document.querySelectorAll('#managePaymentsSlot .payment-row').forEach(row => {
+        const name = row.dataset.name;
+        const amount = Number(row.querySelector('.payment-amount').value) || 795;
+        const months = Number(row.querySelector('.payment-months').value) || 12;
+        paymentsMap[name] = { amount, months };
+      });
+      try {
+        await savePaymentsRequest(paymentsMap);
+        msg.textContent = 'Saved.';
+        msg.style.color = 'var(--ball-yellow)';
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
         msg.style.color = 'var(--clay)';
@@ -1559,6 +1617,23 @@
         }
       });
     });
+  }
+
+  async function renderAdminManagePayments() {
+    const slot = document.getElementById('managePaymentsSlot');
+    if (!slot) return;
+    const payments = await fetchPayments();
+    slot.innerHTML = PLAYERS.map(name => {
+      const p = payments[name] || { amount: 795, months: 12 };
+      return `
+      <div class="payment-row" data-name="${escapeHtml(name)}">
+        <span class="payment-name">${escapeHtml(name)}</span>
+        <span class="payment-label">$</span>
+        <input type="number" class="payment-amount" value="${p.amount}" min="0" step="1">
+        <span class="payment-label">mo.</span>
+        <input type="number" class="payment-months" value="${p.months}" min="1" max="12" step="1">
+      </div>`;
+    }).join('');
   }
 
   function renderAdminActualPicker() {
