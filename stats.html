@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Season Stats — NSRC Early Birds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#142B3D">
+<style>
+  :root {
+    --court-navy: #142B3D;
+    --court-navy-deep: #0B1B28;
+    --panel: #1B3A50;
+    --ball-yellow: #D7F23C;
+    --ball-yellow-dim: #A9C22C;
+    --chalk: #F2F5F0;
+    --clay: #C1502B;
+    --clay-dim: #8F3C20;
+    --net-gray: #8CA0AF;
+    --line: rgba(242,245,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--court-navy);
+    color: var(--chalk);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+  .header {
+    background: var(--court-navy-deep);
+    border-bottom: 2px solid var(--line);
+    padding: 28px 20px 22px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--ball-yellow);
+  }
+  h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: clamp(26px, 6vw, 38px);
+    margin: 6px 0 4px;
+  }
+  .sub { color: var(--net-gray); font-size: 13px; font-family: 'Space Mono', monospace; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 0; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 22px;
+  }
+  .methodology {
+    font-size: 12px;
+    color: var(--net-gray);
+    line-height: 1.6;
+  }
+  .methodology strong { color: var(--chalk); }
+  .loading { text-align: center; color: var(--net-gray); padding: 40px 10px; font-family: 'Space Mono', monospace; font-size: 13px; }
+  table.stats { width: 100%; border-collapse: collapse; }
+  table.stats th, table.stats td { padding: 12px 8px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
+  table.stats th { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; color: var(--net-gray); font-weight: 400; }
+  table.stats td.num, table.stats th.num { text-align: right; }
+  .rank { font-family: 'Archivo Black', sans-serif; color: var(--net-gray); width: 24px; }
+  .rank.top1 { color: var(--ball-yellow); }
+  .rank.top2 { color: var(--chalk); }
+  .rank.top3 { color: var(--clay); }
+  .name-cell { font-weight: 700; }
+  .savings-positive { color: var(--ball-yellow); }
+  .savings-negative { color: var(--clay); }
+  .breakeven-done { color: var(--ball-yellow-dim); font-size: 11px; }
+  .breakeven-pending { color: var(--net-gray); font-size: 11px; }
+  .back-link { display: block; text-align: center; color: var(--net-gray); font-size: 12px; font-family: 'Space Mono', monospace; text-decoration: underline; margin-top: 10px; }
+  .version-tag { margin-top: 6px; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: var(--net-gray); opacity: 0.6; }
+  @media (max-width: 480px) {
+    table.stats { font-size: 12px; }
+    table.stats th, table.stats td { padding: 8px 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="eyebrow">Tennis Availability</div>
+  <h1>Season Stats</h1>
+  <div class="sub" id="seasonRangeLabel">—</div>
+  <div class="version-tag">v1.0</div>
+</div>
+
+<div class="wrap">
+  <div class="card" id="methodologyCard" style="display:none;">
+    <div class="methodology" id="methodologyText"></div>
+  </div>
+
+  <div class="card">
+    <div class="loading" id="loadingMsg">Crunching the numbers…</div>
+    <table class="stats" id="statsTable" style="display:none;">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Player</th>
+          <th class="num">Games</th>
+          <th class="num">$ / game</th>
+          <th class="num">vs. daily rate</th>
+          <th class="num">Break-even</th>
+        </tr>
+      </thead>
+      <tbody id="statsBody"></tbody>
+    </table>
+  </div>
+
+  <a class="back-link" href="/">← Back to the schedule</a>
+</div>
+
+<script>
+(function() {
+  const API_URL = '/api/availability';
+  const SEASON_FEE = 795;
+  const DAILY_RATE = 20;
+  const BREAKEVEN_GAMES = Math.ceil(SEASON_FEE / DAILY_RATE);
+  const ASSUMED_GAMES_PER_WEEK = 2.5;
+  const DEFAULT_PLAYERS_FALLBACK = ['Alex','Billy','Bob','Greg','Igal','Joe','Lewis','Peter'];
+
+  function isoDate(d) { return d.toISOString().slice(0,10); }
+
+  function getWeekStartFor(date) {
+    const d = new Date(date);
+    d.setHours(0,0,0,0);
+    const daysSinceSaturday = (d.getDay() + 1) % 7; // Sat=0 ... Fri=6
+    d.setDate(d.getDate() - daysSinceSaturday);
+    return d;
+  }
+
+  function hashString(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function seededShuffle(arr, seed) {
+    const a = [...arr];
+    const rand = mulberry32(seed);
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  async function fetchWeek(weekKey) {
+    try {
+      const params = new URLSearchParams({ action: 'list', week: weekKey });
+      const res = await fetch(`${API_URL}?${params.toString()}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Reconstructs who actually played each day of a given week — same rules
+  // as the live scheduler (hard caps, weekly-seeded tie-breaks, closed days,
+  // admin-confirmed actual results taking priority over the projection).
+  function tallyWeek(weekKey, responses, closedDays, actualResults, players) {
+    const weekDays = [];
+    const start = new Date(weekKey + 'T00:00:00');
+    for (let i = 2; i <= 6; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      weekDays.push(d);
+    }
+    const weekSeed = hashString(weekKey);
+    const shuffledOrder = seededShuffle(players, weekSeed);
+    const tieRank = {};
+    shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+
+    const playCount = {};
+    const currentStreak = {};
+    const lastPlayedIdx = {};
+    responses.forEach(r => { playCount[r.name] = 0; currentStreak[r.name] = 0; lastPlayedIdx[r.name] = -99; });
+
+    const tally = {};
+
+    weekDays.forEach((d, idx) => {
+      if (closedDays.includes(idx)) return;
+      const actualNames = actualResults[String(idx)];
+      let playing;
+      let playingNames;
+
+      if (actualNames) {
+        playingNames = actualNames;
+        playing = responses.filter(r => actualNames.includes(r.name));
+      } else {
+        const available = responses.filter(r => r.days.includes(idx));
+        if (available.length < 4) return;
+        const wouldExceed = (r) => {
+          const streakCap = r.maxstreak;
+          const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
+          const weeklyCap = r.maxweekly;
+          const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
+          return streakExceeded || weeklyExceeded;
+        };
+        const eligible = available.filter(r => !wouldExceed(r));
+        const byFairness = (a, b) => {
+          const diff = playCount[a.name] - playCount[b.name];
+          if (diff !== 0) return diff;
+          return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
+        };
+        const provisional = [...eligible].sort(byFairness).slice(0, 4);
+        playing = provisional.length >= 4 ? provisional : [];
+        playingNames = playing.map(r => r.name);
+      }
+
+      responses.forEach(r => {
+        if (playing.includes(r)) {
+          currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          lastPlayedIdx[r.name] = idx;
+          playCount[r.name]++;
+        }
+      });
+
+      playingNames.forEach(n => { tally[n] = (tally[n] || 0) + 1; });
+    });
+
+    return tally;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function fmtMoney(n) {
+    return '$' + n.toFixed(2).replace(/\.00$/, '');
+  }
+
+  async function run() {
+    const today = new Date();
+    const currentWeekStart = getWeekStartFor(today);
+    const currentWeekKey = isoDate(currentWeekStart);
+
+    const currentData = await fetchWeek(currentWeekKey);
+    const players = (currentData && currentData.players && currentData.players.length > 0)
+      ? currentData.players
+      : DEFAULT_PLAYERS_FALLBACK;
+
+    const seasonStartWeek = getWeekStartFor(new Date(today.getFullYear(), 5, 1)); // June 1
+
+    const weekStarts = [];
+    let cursor = new Date(seasonStartWeek);
+    while (cursor <= currentWeekStart) {
+      weekStarts.push(new Date(cursor));
+      cursor = new Date(cursor);
+      cursor.setDate(cursor.getDate() + 7);
+    }
+
+    const realTally = {};
+    players.forEach(p => { realTally[p] = 0; });
+    let assumedWeeksCount = 0;
+    let realWeeksCount = 0;
+
+    for (const ws of weekStarts) {
+      const wk = isoDate(ws);
+      const data = (wk === currentWeekKey) ? currentData : await fetchWeek(wk);
+      const hasAnyData = data && (
+        (data.responses && data.responses.length > 0) ||
+        (data.closedDays && data.closedDays.length > 0) ||
+        (data.actualResults && Object.keys(data.actualResults).length > 0)
+      );
+      if (!hasAnyData) {
+        assumedWeeksCount++;
+        continue;
+      }
+      realWeeksCount++;
+      const weekTally = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players);
+      Object.entries(weekTally).forEach(([name, count]) => {
+        realTally[name] = (realTally[name] || 0) + count;
+      });
+    }
+
+    const assumedBaselineTotal = Math.round(assumedWeeksCount * ASSUMED_GAMES_PER_WEEK);
+
+    const finalStats = players.map(name => {
+      const total = assumedBaselineTotal + (realTally[name] || 0);
+      const costPerGame = total > 0 ? SEASON_FEE / total : null;
+      const payPerDayEquivalent = total * DAILY_RATE;
+      const savings = payPerDayEquivalent - SEASON_FEE;
+      return { name, total, costPerGame, savings };
+    }).sort((a, b) => b.total - a.total);
+
+    // Render methodology
+    const opts = { month: 'short', day: 'numeric' };
+    document.getElementById('seasonRangeLabel').textContent =
+      `${seasonStartWeek.toLocaleDateString(undefined, opts)} – ${today.toLocaleDateString(undefined, opts)}`;
+
+    const methodologyCard = document.getElementById('methodologyCard');
+    const methodologyText = document.getElementById('methodologyText');
+    methodologyText.innerHTML = `
+      <strong>How this is calculated:</strong> season runs from June 1. For the
+      ${assumedWeeksCount} week${assumedWeeksCount === 1 ? '' : 's'} before detailed tracking was in place,
+      games are estimated at ${ASSUMED_GAMES_PER_WEEK}/week per person (~${assumedBaselineTotal} games,
+      same for everyone). For the ${realWeeksCount} week${realWeeksCount === 1 ? '' : 's'} since, games reflect
+      actual recorded lineups. Assumes everyone's on the $${SEASON_FEE} season pass — break-even vs. the
+      $${DAILY_RATE}/day rate is ${BREAKEVEN_GAMES} games.
+    `;
+    methodologyCard.style.display = 'block';
+
+    // Render table
+    const tbody = document.getElementById('statsBody');
+    tbody.innerHTML = finalStats.map((s, i) => {
+      const rank = i + 1;
+      const rankClass = rank === 1 ? 'top1' : rank === 2 ? 'top2' : rank === 3 ? 'top3' : '';
+      const costCell = s.costPerGame !== null ? fmtMoney(s.costPerGame) : '—';
+      const savingsCell = s.total > 0
+        ? `<span class="${s.savings >= 0 ? 'savings-positive' : 'savings-negative'}">${s.savings >= 0 ? '+' : '−'}${fmtMoney(Math.abs(s.savings))}</span>`
+        : '—';
+      const breakevenCell = s.total >= BREAKEVEN_GAMES
+        ? `<span class="breakeven-done">✓ broke even ${s.total - BREAKEVEN_GAMES > 0 ? (s.total - BREAKEVEN_GAMES) + ' ago' : ''}</span>`
+        : `<span class="breakeven-pending">${BREAKEVEN_GAMES - s.total} to go</span>`;
+      return `<tr>
+        <td class="rank ${rankClass}">${rank}</td>
+        <td class="name-cell">${escapeHtml(s.name)}</td>
+        <td class="num">${s.total}</td>
+        <td class="num">${costCell}</td>
+        <td class="num">${savingsCell}</td>
+        <td class="num">${breakevenCell}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('statsTable').style.display = 'table';
+  }
+
+  run();
+})();
+</script>
+</body>
+</html>
