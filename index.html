@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.7</div>
+  <div class="version-tag">v3.8</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1050,8 +1050,16 @@
         cappedOut = available.filter(r => wouldExceed(r));
 
         const byFairness = (a, b) => {
+          // Primary: fewer games played so far this week gets priority.
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
+          // Secondary: among people tied on games played, whoever has FEWER
+          // available days this week gets priority — someone who can only
+          // play 2 days has no other chance to make it up if bumped, while
+          // someone free all week can just get picked another day instead.
+          const availDiff = a.days.length - b.days.length;
+          if (availDiff !== 0) return availDiff;
+          // Tertiary: well-mixed weekly shuffle for anyone still tied.
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
         };
 
