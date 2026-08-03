@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.9</div>
+  <div class="version-tag">v3.10</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -947,33 +947,67 @@
   }
 
   async function fetchWeather() {
-    try {
-      const params = new URLSearchParams({
-        latitude: String(CLUB_LATITUDE),
-        longitude: String(CLUB_LONGITUDE),
-        hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature',
-        temperature_unit: 'fahrenheit',
-        timezone: 'America/New_York',
-        start_date: isoDate(weekDays[0]),
-        end_date: isoDate(weekDays[4])
-      });
-      const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data.hourly || !data.hourly.time) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const pastDays = weekDays.filter(d => { const dd = new Date(d); dd.setHours(0,0,0,0); return dd.getTime() < today.getTime(); });
+    const upcomingDays = weekDays.filter(d => { const dd = new Date(d); dd.setHours(0,0,0,0); return dd.getTime() >= today.getTime(); });
+
+    function applyResult(data) {
+      if (!data || !data.hourly || !data.hourly.time) return false;
       const times = data.hourly.time;
+      let matchedAny = false;
       weekDays.forEach((d, idx) => {
         const targetPrefix = `${isoDate(d)}T07:00`;
         const i = times.indexOf(targetPrefix);
         if (i === -1) return;
+        matchedAny = true;
         const temp = data.hourly.temperature_2m[i];
         const humidity = data.hourly.relative_humidity_2m[i];
         const feelsLike = data.hourly.apparent_temperature[i];
         weatherByDay[idx] = { temp, humidity, feelsLike, comfort: comfortEstimate(feelsLike, humidity) };
       });
+      return matchedAny;
+    }
+
+    try {
+      if (upcomingDays.length > 0) {
+        const params = new URLSearchParams({
+          latitude: String(CLUB_LATITUDE),
+          longitude: String(CLUB_LONGITUDE),
+          hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature',
+          temperature_unit: 'fahrenheit',
+          timezone: 'America/New_York',
+          forecast_days: '7'
+        });
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!applyResult(data)) console.warn('Forecast weather: no matching timestamps. Sample:', data.hourly && data.hourly.time && data.hourly.time.slice(0, 5));
+        } else {
+          console.warn('Forecast weather fetch failed:', res.status, await res.text());
+        }
+      }
+      if (pastDays.length > 0) {
+        const params = new URLSearchParams({
+          latitude: String(CLUB_LATITUDE),
+          longitude: String(CLUB_LONGITUDE),
+          hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature',
+          temperature_unit: 'fahrenheit',
+          timezone: 'America/New_York',
+          start_date: isoDate(pastDays[0]),
+          end_date: isoDate(pastDays[pastDays.length - 1])
+        });
+        const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!applyResult(data)) console.warn('Historical weather: no matching timestamps. Sample:', data.hourly && data.hourly.time && data.hourly.time.slice(0, 5));
+        } else {
+          console.warn('Historical weather fetch failed:', res.status, await res.text());
+        }
+      }
       if (lastResponses.length > 0 || closedDays.length > 0) renderBoard(lastResponses);
     } catch (e) {
-      // Weather is a nice-to-have — fail silently and just omit it.
+      console.warn('Weather fetch error:', e);
     }
   }
 
