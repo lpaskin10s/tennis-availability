@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.11</div>
+  <div class="version-tag">v3.12</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -940,7 +940,7 @@
   const CLUB_LONGITUDE = -74.0897;
 
   function comfortEstimate(feelsLike, humidity) {
-    if (feelsLike >= 75 && humidity >= 60) return { emoji: '🥵', text: 'warm & humid indoors likely — no AC' };
+    if (feelsLike >= 75 && humidity >= 60) return { emoji: '🥵', text: 'warm & humid indoors likely' };
     if (feelsLike >= 68) return { emoji: '🙂', text: 'could get warm indoors as the morning goes on' };
     if (feelsLike >= 45) return { emoji: '😊', text: 'should feel comfortable indoors' };
     return { emoji: '🥶', text: 'chilly indoors likely — heat may not fully keep up' };
