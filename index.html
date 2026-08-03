@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.10</div>
+  <div class="version-tag">v3.11</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -957,14 +957,28 @@
       const times = data.hourly.time;
       let matchedAny = false;
       weekDays.forEach((d, idx) => {
-        const targetPrefix = `${isoDate(d)}T07:00`;
-        const i = times.indexOf(targetPrefix);
-        if (i === -1) return;
+        // Play runs roughly 6:15/6:30–7:45am; Open-Meteo gives hourly points,
+        // so 6:00 and 8:00 are the closest bracketing readings for start/finish.
+        const startPrefix = `${isoDate(d)}T06:00`;
+        const finishPrefix = `${isoDate(d)}T08:00`;
+        const si = times.indexOf(startPrefix);
+        const fi = times.indexOf(finishPrefix);
+        if (si === -1 && fi === -1) return;
         matchedAny = true;
-        const temp = data.hourly.temperature_2m[i];
-        const humidity = data.hourly.relative_humidity_2m[i];
-        const feelsLike = data.hourly.apparent_temperature[i];
-        weatherByDay[idx] = { temp, humidity, feelsLike, comfort: comfortEstimate(feelsLike, humidity) };
+        const startTemp = si !== -1 ? data.hourly.temperature_2m[si] : null;
+        const startFeelsLike = si !== -1 ? data.hourly.apparent_temperature[si] : null;
+        const startHumidity = si !== -1 ? data.hourly.relative_humidity_2m[si] : null;
+        const finishTemp = fi !== -1 ? data.hourly.temperature_2m[fi] : null;
+        const finishFeelsLike = fi !== -1 ? data.hourly.apparent_temperature[fi] : null;
+        const finishHumidity = fi !== -1 ? data.hourly.relative_humidity_2m[fi] : null;
+        const avgFeelsLike = (startFeelsLike ?? finishFeelsLike ?? 60);
+        const avgFeelsLike2 = (startFeelsLike != null && finishFeelsLike != null) ? (startFeelsLike + finishFeelsLike) / 2 : avgFeelsLike;
+        const avgHumidity = (startHumidity != null && finishHumidity != null) ? (startHumidity + finishHumidity) / 2 : (startHumidity ?? finishHumidity ?? 50);
+        weatherByDay[idx] = {
+          startTemp, startFeelsLike, startHumidity,
+          finishTemp, finishFeelsLike, finishHumidity,
+          comfort: comfortEstimate(avgFeelsLike2, avgHumidity)
+        };
       });
       return matchedAny;
     }
@@ -1318,9 +1332,15 @@
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
       const confirmedTag = plan.isActual ? ` <span style="color:var(--ball-yellow);">✓ confirmed</span>` : '';
       const w = weatherByDay[plan.idx];
-      const weatherLine = (w && !plan.closed)
-        ? `<div style="font-size:11px;color:var(--net-gray);margin-top:2px;">${w.comfort.emoji} ${Math.round(w.temp)}°F outside, feels like ${Math.round(w.feelsLike)}° · ${w.humidity}% humidity — ${w.comfort.text} <span style="opacity:0.6;">(estimate)</span></div>`
-        : '';
+      let weatherLine = '';
+      if (w && !plan.closed) {
+        const tempRange = (w.startTemp != null && w.finishTemp != null)
+          ? `${Math.round(w.startTemp)}°F at start → ${Math.round(w.finishTemp)}°F by finish`
+          : `${Math.round(w.startTemp ?? w.finishTemp)}°F outside`;
+        const feelsLike = w.startFeelsLike != null ? w.startFeelsLike : w.finishFeelsLike;
+        const humidity = w.startHumidity != null ? w.startHumidity : w.finishHumidity;
+        weatherLine = `<div style="font-size:11px;color:var(--net-gray);margin-top:2px;">${w.comfort.emoji} ${tempRange} (feels like ~${Math.round(feelsLike)}°) · ${Math.round(humidity)}% humidity — ${w.comfort.text} <span style="opacity:0.6;">(estimate)</span></div>`;
+      }
       if (plan.closed) {
         return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
       }
