@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.8</div>
+  <div class="version-tag">v3.9</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -760,6 +760,7 @@
   let actualResults = {};
   let lastDayPlans = [];
   let didInitialPopulate = false;
+  let weatherByDay = {};
 
   // Start time rule: 6:15am if Igal is in that day's lineup, otherwise 6:30am.
   // Always finishes by 7:45am.
@@ -930,6 +931,52 @@
       throw new Error(data.error || `HTTP ${res.status}`);
     }
   }
+
+  // Outdoor forecast for the club's location, translated into a rough indoor
+  // comfort estimate — the building has no AC and not much air movement, so
+  // it tends to track (or exceed) outdoor conditions rather than staying
+  // controlled. This is always an ESTIMATE, not a real indoor reading.
+  const CLUB_LATITUDE = 40.2780;
+  const CLUB_LONGITUDE = -74.0897;
+
+  function comfortEstimate(feelsLike, humidity) {
+    if (feelsLike >= 75 && humidity >= 60) return { emoji: '🥵', text: 'warm & humid indoors likely — no AC' };
+    if (feelsLike >= 68) return { emoji: '🙂', text: 'could get warm indoors as the morning goes on' };
+    if (feelsLike >= 45) return { emoji: '😊', text: 'should feel comfortable indoors' };
+    return { emoji: '🥶', text: 'chilly indoors likely — heat may not fully keep up' };
+  }
+
+  async function fetchWeather() {
+    try {
+      const params = new URLSearchParams({
+        latitude: String(CLUB_LATITUDE),
+        longitude: String(CLUB_LONGITUDE),
+        hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature',
+        temperature_unit: 'fahrenheit',
+        timezone: 'America/New_York',
+        start_date: isoDate(weekDays[0]),
+        end_date: isoDate(weekDays[4])
+      });
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.hourly || !data.hourly.time) return;
+      const times = data.hourly.time;
+      weekDays.forEach((d, idx) => {
+        const targetPrefix = `${isoDate(d)}T07:00`;
+        const i = times.indexOf(targetPrefix);
+        if (i === -1) return;
+        const temp = data.hourly.temperature_2m[i];
+        const humidity = data.hourly.relative_humidity_2m[i];
+        const feelsLike = data.hourly.apparent_temperature[i];
+        weatherByDay[idx] = { temp, humidity, feelsLike, comfort: comfortEstimate(feelsLike, humidity) };
+      });
+      if (lastResponses.length > 0 || closedDays.length > 0) renderBoard(lastResponses);
+    } catch (e) {
+      // Weather is a nice-to-have — fail silently and just omit it.
+    }
+  }
+
 
   async function loadData() {
     const params = new URLSearchParams({ action: 'list', week: weekKey });
@@ -1236,6 +1283,10 @@
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
       const confirmedTag = plan.isActual ? ` <span style="color:var(--ball-yellow);">✓ confirmed</span>` : '';
+      const w = weatherByDay[plan.idx];
+      const weatherLine = (w && !plan.closed)
+        ? `<div style="font-size:11px;color:var(--net-gray);margin-top:2px;">${w.comfort.emoji} ${Math.round(w.temp)}°F outside, feels like ${Math.round(w.feelsLike)}° · ${w.humidity}% humidity — ${w.comfort.text} <span style="opacity:0.6;">(estimate)</span></div>`
+        : '';
       if (plan.closed) {
         return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
       }
@@ -1248,15 +1299,15 @@
           ? `<div style="font-size:11px;color:var(--net-gray);margin:2px 0 4px 0;">Suggested teams: ${escapeHtml(pairs[0].join(' & '))} <span style="color:var(--ball-yellow-dim);">vs</span> ${escapeHtml(pairs[1].join(' & '))}</div>`
           : '';
         const lineStyle = isSelfPlaying ? 'border-left:3px solid var(--ball-yellow); padding-left:8px; background:rgba(215,242,60,0.06); border-radius:4px;' : '';
-        return `<div class="txt-sub" style="${lineStyle}"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${highlightNames(plan.playing.map(r => r.name), selectedName)}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}</div>`;
+        return `<div class="txt-sub" style="${lineStyle}"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${highlightNames(plan.playing.map(r => r.name), selectedName)}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}${weatherLine}</div>`;
       }
       if (plan.available.length === 0) {
-        return `<div class="txt-sub">${dateLabel}: no one available</div>`;
+        return `<div class="txt-sub">${dateLabel}: no one available${weatherLine}</div>`;
       }
       if (plan.cappedOut.length > 0) {
-        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)</div>`;
+        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)${weatherLine}</div>`;
       }
-      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}</div>`;
+      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}${weatherLine}</div>`;
     }).join('');
 
     const anyPlayableDay = dayPlans.some(p => p.playing.length >= 4);
@@ -1675,6 +1726,7 @@
   }
 
   refresh();
+  fetchWeather();
 
   // Auto-refresh the board periodically so people see live updates without
   // reloading. Paused while the tab is hidden/backgrounded to avoid wasted
