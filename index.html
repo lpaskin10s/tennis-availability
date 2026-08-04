@@ -537,7 +537,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.3</div>
+  <div class="version-tag">v4.4</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -720,153 +720,6 @@
     const shuffledOrder = seededShuffle(PLAYERS, weekSeed);
     tieRank = {};
     shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
-  }
-
-  // ---- Personal season snapshot (games played, streak) ----
-  // Mirrors stats.html's tallyWeek logic exactly (including the 9am same-day
-  // cutoff) so the numbers here always agree with the Season Stats page.
-  function tallyWeekForSnapshot(weekKeyStr, responses, closedDaysArr, actualResultsObj, playersArr, now) {
-    const CUTOFF_HOUR = 9;
-    const wDays = [];
-    const start = new Date(weekKeyStr + 'T00:00:00');
-    for (let i = 2; i <= 6; i++) { const d = new Date(start); d.setDate(start.getDate() + i); wDays.push(d); }
-    const seed = hashString(weekKeyStr);
-    const shuffled = seededShuffle(playersArr, seed);
-    const tr = {}; shuffled.forEach((n, i) => { tr[n] = i; });
-    const playCount = {}, currentStreak = {}, lastPlayedIdx = {};
-    responses.forEach(r => { playCount[r.name] = 0; currentStreak[r.name] = 0; lastPlayedIdx[r.name] = -99; });
-    const tally = {};
-    const todayDateOnly = new Date(now); todayDateOnly.setHours(0, 0, 0, 0);
-
-    wDays.forEach((d, idx) => {
-      if (closedDaysArr.includes(idx)) return;
-      const actualNames = actualResultsObj[String(idx)];
-
-      if (!actualNames) {
-        const dayDateOnly = new Date(d); dayDateOnly.setHours(0, 0, 0, 0);
-        const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
-        const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= CUTOFF_HOUR;
-        if (!isPastDay && !isTodayPastCutoff) return;
-      }
-
-      let playing, playingNames;
-      if (actualNames) {
-        playingNames = actualNames;
-        playing = responses.filter(r => actualNames.includes(r.name));
-      } else {
-        const available = responses.filter(r => !r.out && r.days.includes(idx));
-        if (available.length < 4) { playing = []; playingNames = []; }
-        else {
-          const wouldExceed = (r) => {
-            const streakCap = r.maxstreak;
-            const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
-            const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
-            const weeklyCap = r.maxweekly;
-            const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
-            return streakExceeded || weeklyExceeded;
-          };
-          const eligible = available.filter(r => !wouldExceed(r));
-          const byFairness = (a, b) => {
-            const diff = playCount[a.name] - playCount[b.name];
-            if (diff !== 0) return diff;
-            const availDiff = a.days.length - b.days.length;
-            if (availDiff !== 0) return availDiff;
-            return (tr[a.name] ?? 99) - (tr[b.name] ?? 99);
-          };
-          const provisional = [...eligible].sort(byFairness).slice(0, 4);
-          playing = provisional.length >= 4 ? provisional : [];
-          playingNames = playing.map(r => r.name);
-        }
-      }
-
-      responses.forEach(r => {
-        if (playing.includes(r)) {
-          currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
-          lastPlayedIdx[r.name] = idx;
-          playCount[r.name]++;
-        }
-      });
-      playingNames.forEach(n => { tally[n] = (tally[n] || 0) + 1; });
-    });
-
-    return tally;
-  }
-
-  async function fetchWeekRaw(wk) {
-    try {
-      const params = new URLSearchParams({ action: 'list', week: wk });
-      const res = await fetch(`${API_URL}?${params.toString()}`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (e) {
-      return null;
-    }
-  }
-
-  let seasonSnapshotPromise = null;
-  async function computeSeasonSnapshotData() {
-    if (seasonSnapshotPromise) return seasonSnapshotPromise;
-    seasonSnapshotPromise = (async () => {
-      const now = new Date();
-      const seasonYear = getCurrentSeasonYear();
-      const seasonStartWeek = (function() {
-        const d = new Date(seasonYear, 5, 1);
-        d.setHours(0, 0, 0, 0);
-        const daysSinceSaturday = (d.getDay() + 1) % 7;
-        d.setDate(d.getDate() - daysSinceSaturday);
-        return d;
-      })();
-
-      const weekStarts = [];
-      let cursor = new Date(seasonStartWeek);
-      while (cursor <= weekStart) {
-        weekStarts.push(new Date(cursor));
-        cursor = new Date(cursor);
-        cursor.setDate(cursor.getDate() + 7);
-      }
-
-      const weekDataList = await Promise.all(weekStarts.map(ws => {
-        const wk = isoDate(ws);
-        return (wk === weekKey)
-          ? Promise.resolve({ responses: lastResponses, closedDays, actualResults, players: PLAYERS })
-          : fetchWeekRaw(wk);
-      }));
-
-      const totals = {};
-      const weeklyHasGame = []; // in chronological order, per week: true/false whether the played-so-far tally was > 0 for anyone (used only to know which weeks had real activity)
-      const perPlayerWeekly = []; // [{name: bool}, ...] per week, chronological
-
-      weekStarts.forEach((ws, wi) => {
-        const data = weekDataList[wi];
-        const responses = (data && data.responses) || [];
-        const closedD = (data && data.closedDays) || [];
-        const actualR = (data && data.actualResults) || {};
-        const hasAnyData = responses.length > 0 || closedD.length > 0;
-        if (!hasAnyData) { perPlayerWeekly.push(null); return; }
-        const wk = isoDate(ws);
-        const tally = tallyWeekForSnapshot(wk, responses, closedD, actualR, PLAYERS, now);
-        Object.entries(tally).forEach(([name, count]) => {
-          totals[name] = (totals[name] || 0) + count;
-        });
-        perPlayerWeekly.push(tally);
-      });
-
-      // Current streak per player: consecutive most-recent weeks (with real
-      // data) where they played at least once, walking backward from now.
-      const streaks = {};
-      PLAYERS.forEach(name => {
-        let streak = 0;
-        for (let i = perPlayerWeekly.length - 1; i >= 0; i--) {
-          const weekTally = perPlayerWeekly[i];
-          if (weekTally === null) continue; // no data that week — skip, don't break the streak on pure absence of tracking
-          if ((weekTally[name] || 0) > 0) { streak++; } else { break; }
-        }
-        streaks[name] = streak;
-      });
-
-      return { totals, streaks };
-    })();
-    return seasonSnapshotPromise;
   }
 
   const weekDays = [];
@@ -1053,41 +906,33 @@
   }
 
   const subNameInput = document.getElementById('subNameInput');
-  async function renderPersonalSnapshot(name) {
+  function renderPersonalSnapshot(name) {
     const slot = document.getElementById('personalSnapshotSlot');
     if (!name || name === '__sub__') { slot.innerHTML = ''; return; }
-    slot.innerHTML = `<div class="snapshot-card"><span style="color:var(--net-gray);font-size:12px;font-family:'Space Mono',monospace;">Loading your season snapshot…</span></div>`;
-    try {
-      const { totals } = await computeSeasonSnapshotData();
-      const gamesThisSeason = totals[name] || 0;
 
-      const now = new Date();
-      const todayDateOnly = new Date(now);
-      todayDateOnly.setHours(0, 0, 0, 0);
-      const NEXT_DAY_CUTOFF_HOUR = 9;
+    const now = new Date();
+    const todayDateOnly = new Date(now);
+    todayDateOnly.setHours(0, 0, 0, 0);
+    const NEXT_DAY_CUTOFF_HOUR = 9;
 
-      let nextDayLabel = 'None confirmed yet';
-      for (const plan of lastDayPlans) {
-        if (plan.closed || plan.playing.length < 4) continue;
-        if (!plan.playing.some(r => r.name === name)) continue;
-        const d = weekDays[plan.idx];
-        const dayDateOnly = new Date(d);
-        dayDateOnly.setHours(0, 0, 0, 0);
-        const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
-        const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= NEXT_DAY_CUTOFF_HOUR;
-        if (isPastDay || isTodayPastCutoff) continue; // already happened (or today's match is over) — skip
-        nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
-        break;
-      }
-
-      slot.innerHTML = `
-        <div class="snapshot-card">
-          <div class="snapshot-stat"><span class="val">${gamesThisSeason}</span><span class="lbl">Games this season</span></div>
-          <div class="snapshot-stat"><span class="val" style="font-size:14px;">${escapeHtml(nextDayLabel)}</span><span class="lbl">Next confirmed day</span></div>
-        </div>`;
-    } catch (e) {
-      slot.innerHTML = '';
+    let nextDayLabel = 'None confirmed yet';
+    for (const plan of lastDayPlans) {
+      if (plan.closed || plan.playing.length < 4) continue;
+      if (!plan.playing.some(r => r.name === name)) continue;
+      const d = weekDays[plan.idx];
+      const dayDateOnly = new Date(d);
+      dayDateOnly.setHours(0, 0, 0, 0);
+      const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
+      const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= NEXT_DAY_CUTOFF_HOUR;
+      if (isPastDay || isTodayPastCutoff) continue; // already happened (or today's match is over) — skip
+      nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      break;
     }
+
+    slot.innerHTML = `
+      <div class="snapshot-card">
+        <div class="snapshot-stat"><span class="val" style="font-size:16px;">${escapeHtml(nextDayLabel)}</span><span class="lbl">Next confirmed day</span></div>
+      </div>`;
   }
 
   nameSelect.addEventListener('change', () => {
