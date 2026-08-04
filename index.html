@@ -537,7 +537,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.0</div>
+  <div class="version-tag">v4.3</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1058,15 +1058,24 @@
     if (!name || name === '__sub__') { slot.innerHTML = ''; return; }
     slot.innerHTML = `<div class="snapshot-card"><span style="color:var(--net-gray);font-size:12px;font-family:'Space Mono',monospace;">Loading your season snapshot…</span></div>`;
     try {
-      const { totals, streaks } = await computeSeasonSnapshotData();
+      const { totals } = await computeSeasonSnapshotData();
       const gamesThisSeason = totals[name] || 0;
-      const streak = streaks[name] || 0;
+
+      const now = new Date();
+      const todayDateOnly = new Date(now);
+      todayDateOnly.setHours(0, 0, 0, 0);
+      const NEXT_DAY_CUTOFF_HOUR = 9;
 
       let nextDayLabel = 'None confirmed yet';
       for (const plan of lastDayPlans) {
         if (plan.closed || plan.playing.length < 4) continue;
         if (!plan.playing.some(r => r.name === name)) continue;
         const d = weekDays[plan.idx];
+        const dayDateOnly = new Date(d);
+        dayDateOnly.setHours(0, 0, 0, 0);
+        const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
+        const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= NEXT_DAY_CUTOFF_HOUR;
+        if (isPastDay || isTodayPastCutoff) continue; // already happened (or today's match is over) — skip
         nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
         break;
       }
@@ -1074,7 +1083,6 @@
       slot.innerHTML = `
         <div class="snapshot-card">
           <div class="snapshot-stat"><span class="val">${gamesThisSeason}</span><span class="lbl">Games this season</span></div>
-          <div class="snapshot-stat"><span class="val">${streak}</span><span class="lbl">Week streak</span></div>
           <div class="snapshot-stat"><span class="val" style="font-size:14px;">${escapeHtml(nextDayLabel)}</span><span class="lbl">Next confirmed day</span></div>
         </div>`;
     } catch (e) {
@@ -1597,17 +1605,35 @@
     ctx.fillText('NSRC Early Birds — indoor doubles', W / 2, H - 18);
 
     return new Promise((resolve, reject) => {
-      canvas.toBlob(blob => {
+      canvas.toBlob(async blob => {
         if (!blob) { reject(new Error('Could not generate image')); return; }
+        const filename = `nsrc-early-birds-${weekKey}.png`;
+
+        // On mobile, the native share sheet lets people go straight to
+        // Messages/group text in a couple taps — much faster than downloading
+        // and then attaching from Photos. Fall back to a plain download
+        // wherever sharing files isn't supported (mainly desktop browsers).
+        try {
+          const file = new File([blob], filename, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: 'NSRC Early Birds', text: `This week's lineup — ${fmtRange()}` });
+            resolve('shared');
+            return;
+          }
+        } catch (shareErr) {
+          if (shareErr && shareErr.name === 'AbortError') { resolve('cancelled'); return; } // user closed the share sheet — not an error
+          // any other share failure falls through to the download below
+        }
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `nsrc-early-birds-${weekKey}.png`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        resolve();
+        resolve('downloaded');
       }, 'image/png');
     });
   }
@@ -1739,7 +1765,7 @@
           ${dayLines}
           <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
           <button type="button" class="copy-lineup-btn" id="copyLineupBtn">Copy lineup to clipboard</button>
-          <button type="button" class="copy-lineup-btn" id="downloadGraphicBtn" style="margin-top:8px;">📸 Download weekly graphic</button>
+          <button type="button" class="copy-lineup-btn" id="downloadGraphicBtn" style="margin-top:8px;">📸 Share weekly graphic</button>
         </div>
       </div>`;
 
@@ -1782,8 +1808,8 @@
         const originalText = graphicBtn.textContent;
         graphicBtn.textContent = 'Generating…';
         try {
-          await generateWeeklyGraphic(lastDayPlans);
-          graphicBtn.textContent = 'Downloaded!';
+          const result = await generateWeeklyGraphic(lastDayPlans);
+          graphicBtn.textContent = result === 'shared' ? 'Shared!' : result === 'cancelled' ? originalText : 'Downloaded!';
         } catch (e) {
           graphicBtn.textContent = 'Failed — try again';
           console.error('Graphic generation error:', e);
