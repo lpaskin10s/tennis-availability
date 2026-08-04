@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.6</div>
+  <div class="version-tag">v4.7</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1565,7 +1565,18 @@
     responses.forEach(r => { playCountTotal[r.name] = 0; });
     dayPlans.forEach(plan => plan.playing.forEach(r => { playCountTotal[r.name]++; }));
 
-    const dayLines = dayPlans.map(plan => {
+    function isDayInPast(plan) {
+      // For this list, "past" means a fully-completed calendar day — today
+      // stays in the main view all day (people check in on today's match
+      // any time), it only drops to "earlier this week" once it's tomorrow.
+      const now = new Date();
+      const todayDateOnly = new Date(now); todayDateOnly.setHours(0, 0, 0, 0);
+      const d = weekDays[plan.idx];
+      const dayDateOnly = new Date(d); dayDateOnly.setHours(0, 0, 0, 0);
+      return dayDateOnly.getTime() < todayDateOnly.getTime();
+    }
+
+    function renderDayLine(plan) {
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
       const confirmedTag = plan.isActual ? ` <span style="color:var(--ball-yellow);">✓ confirmed</span>` : '';
@@ -1600,7 +1611,27 @@
         return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)${weatherLine}</div>`;
       }
       return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}${weatherLine}</div>`;
-    }).join('');
+    }
+
+    const upcomingPlans = dayPlans.filter(p => !isDayInPast(p));
+    const pastPlans = dayPlans.filter(p => isDayInPast(p));
+
+    const dayLines = upcomingPlans.map(renderDayLine).join('');
+
+    const pastLinesHtml = pastPlans.length === 0 ? '' : `
+      <div style="border-top:1px solid var(--line); padding-top:8px; margin-top:10px; opacity:0.45;">
+        <div style="font-size:11px;color:var(--net-gray);font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-bottom:4px;">EARLIER THIS WEEK</div>
+        ${pastPlans.map(plan => {
+          const d = weekDays[plan.idx];
+          const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+          let summary;
+          if (plan.closed) summary = 'club closed';
+          else if (plan.playing.length >= 4) summary = plan.playing.map(r => r.name).join(', ');
+          else if (plan.available.length === 0) summary = 'no one available';
+          else summary = `only ${plan.available.length} available`;
+          return `<div style="font-size:12px;color:var(--chalk);margin-bottom:2px;">${dateLabel}: ${escapeHtml(summary)}</div>`;
+        }).join('')}
+      </div>`;
 
     const anyPlayableDay = dayPlans.some(p => p.playing.length >= 4);
     const balanceNote = anyPlayableDay
@@ -1612,6 +1643,7 @@
         <div style="flex:1;">
           <div class="txt-main">This week's lineup</div>
           ${dayLines}
+          ${pastLinesHtml}
           <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
           <button type="button" class="copy-lineup-btn" id="copyLineupBtn">Copy lineup to clipboard</button>
           <button type="button" class="copy-lineup-btn" id="downloadGraphicBtn" style="margin-top:8px;">📸 Share weekly graphic</button>
