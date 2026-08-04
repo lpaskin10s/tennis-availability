@@ -267,6 +267,31 @@
   }
   .day-chip.admin-select.selected .dow, .day-chip.admin-select.selected .dnum { color: var(--chalk); }
 
+  .snapshot-card {
+    background: var(--court-navy-deep);
+    border: 1px solid var(--ball-yellow-dim);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: -6px 0 18px 0;
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .snapshot-stat { text-align: left; }
+  .snapshot-stat .val {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    color: var(--ball-yellow);
+    display: block;
+  }
+  .snapshot-stat .lbl {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--net-gray);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   .out-toggle {
     display: block;
     width: 100%;
@@ -512,7 +537,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.14</div>
+  <div class="version-tag">v4.0</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -525,6 +550,7 @@
       <option value="" disabled selected>Choose your name…</option>
     </select>
     <input type="text" id="subNameInput" placeholder="Sub's name" style="display:none;">
+    <div id="personalSnapshotSlot"></div>
 
     <label class="field-label">Days you can play this week</label>
     <div class="day-grid" id="dayGrid"></div>
@@ -694,6 +720,153 @@
     const shuffledOrder = seededShuffle(PLAYERS, weekSeed);
     tieRank = {};
     shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+  }
+
+  // ---- Personal season snapshot (games played, streak) ----
+  // Mirrors stats.html's tallyWeek logic exactly (including the 9am same-day
+  // cutoff) so the numbers here always agree with the Season Stats page.
+  function tallyWeekForSnapshot(weekKeyStr, responses, closedDaysArr, actualResultsObj, playersArr, now) {
+    const CUTOFF_HOUR = 9;
+    const wDays = [];
+    const start = new Date(weekKeyStr + 'T00:00:00');
+    for (let i = 2; i <= 6; i++) { const d = new Date(start); d.setDate(start.getDate() + i); wDays.push(d); }
+    const seed = hashString(weekKeyStr);
+    const shuffled = seededShuffle(playersArr, seed);
+    const tr = {}; shuffled.forEach((n, i) => { tr[n] = i; });
+    const playCount = {}, currentStreak = {}, lastPlayedIdx = {};
+    responses.forEach(r => { playCount[r.name] = 0; currentStreak[r.name] = 0; lastPlayedIdx[r.name] = -99; });
+    const tally = {};
+    const todayDateOnly = new Date(now); todayDateOnly.setHours(0, 0, 0, 0);
+
+    wDays.forEach((d, idx) => {
+      if (closedDaysArr.includes(idx)) return;
+      const actualNames = actualResultsObj[String(idx)];
+
+      if (!actualNames) {
+        const dayDateOnly = new Date(d); dayDateOnly.setHours(0, 0, 0, 0);
+        const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
+        const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= CUTOFF_HOUR;
+        if (!isPastDay && !isTodayPastCutoff) return;
+      }
+
+      let playing, playingNames;
+      if (actualNames) {
+        playingNames = actualNames;
+        playing = responses.filter(r => actualNames.includes(r.name));
+      } else {
+        const available = responses.filter(r => !r.out && r.days.includes(idx));
+        if (available.length < 4) { playing = []; playingNames = []; }
+        else {
+          const wouldExceed = (r) => {
+            const streakCap = r.maxstreak;
+            const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+            const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
+            const weeklyCap = r.maxweekly;
+            const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
+            return streakExceeded || weeklyExceeded;
+          };
+          const eligible = available.filter(r => !wouldExceed(r));
+          const byFairness = (a, b) => {
+            const diff = playCount[a.name] - playCount[b.name];
+            if (diff !== 0) return diff;
+            const availDiff = a.days.length - b.days.length;
+            if (availDiff !== 0) return availDiff;
+            return (tr[a.name] ?? 99) - (tr[b.name] ?? 99);
+          };
+          const provisional = [...eligible].sort(byFairness).slice(0, 4);
+          playing = provisional.length >= 4 ? provisional : [];
+          playingNames = playing.map(r => r.name);
+        }
+      }
+
+      responses.forEach(r => {
+        if (playing.includes(r)) {
+          currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          lastPlayedIdx[r.name] = idx;
+          playCount[r.name]++;
+        }
+      });
+      playingNames.forEach(n => { tally[n] = (tally[n] || 0) + 1; });
+    });
+
+    return tally;
+  }
+
+  async function fetchWeekRaw(wk) {
+    try {
+      const params = new URLSearchParams({ action: 'list', week: wk });
+      const res = await fetch(`${API_URL}?${params.toString()}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  let seasonSnapshotPromise = null;
+  async function computeSeasonSnapshotData() {
+    if (seasonSnapshotPromise) return seasonSnapshotPromise;
+    seasonSnapshotPromise = (async () => {
+      const now = new Date();
+      const seasonYear = getCurrentSeasonYear();
+      const seasonStartWeek = (function() {
+        const d = new Date(seasonYear, 5, 1);
+        d.setHours(0, 0, 0, 0);
+        const daysSinceSaturday = (d.getDay() + 1) % 7;
+        d.setDate(d.getDate() - daysSinceSaturday);
+        return d;
+      })();
+
+      const weekStarts = [];
+      let cursor = new Date(seasonStartWeek);
+      while (cursor <= weekStart) {
+        weekStarts.push(new Date(cursor));
+        cursor = new Date(cursor);
+        cursor.setDate(cursor.getDate() + 7);
+      }
+
+      const weekDataList = await Promise.all(weekStarts.map(ws => {
+        const wk = isoDate(ws);
+        return (wk === weekKey)
+          ? Promise.resolve({ responses: lastResponses, closedDays, actualResults, players: PLAYERS })
+          : fetchWeekRaw(wk);
+      }));
+
+      const totals = {};
+      const weeklyHasGame = []; // in chronological order, per week: true/false whether the played-so-far tally was > 0 for anyone (used only to know which weeks had real activity)
+      const perPlayerWeekly = []; // [{name: bool}, ...] per week, chronological
+
+      weekStarts.forEach((ws, wi) => {
+        const data = weekDataList[wi];
+        const responses = (data && data.responses) || [];
+        const closedD = (data && data.closedDays) || [];
+        const actualR = (data && data.actualResults) || {};
+        const hasAnyData = responses.length > 0 || closedD.length > 0;
+        if (!hasAnyData) { perPlayerWeekly.push(null); return; }
+        const wk = isoDate(ws);
+        const tally = tallyWeekForSnapshot(wk, responses, closedD, actualR, PLAYERS, now);
+        Object.entries(tally).forEach(([name, count]) => {
+          totals[name] = (totals[name] || 0) + count;
+        });
+        perPlayerWeekly.push(tally);
+      });
+
+      // Current streak per player: consecutive most-recent weeks (with real
+      // data) where they played at least once, walking backward from now.
+      const streaks = {};
+      PLAYERS.forEach(name => {
+        let streak = 0;
+        for (let i = perPlayerWeekly.length - 1; i >= 0; i--) {
+          const weekTally = perPlayerWeekly[i];
+          if (weekTally === null) continue; // no data that week — skip, don't break the streak on pure absence of tracking
+          if ((weekTally[name] || 0) > 0) { streak++; } else { break; }
+        }
+        streaks[name] = streak;
+      });
+
+      return { totals, streaks };
+    })();
+    return seasonSnapshotPromise;
   }
 
   const weekDays = [];
@@ -880,6 +1053,35 @@
   }
 
   const subNameInput = document.getElementById('subNameInput');
+  async function renderPersonalSnapshot(name) {
+    const slot = document.getElementById('personalSnapshotSlot');
+    if (!name || name === '__sub__') { slot.innerHTML = ''; return; }
+    slot.innerHTML = `<div class="snapshot-card"><span style="color:var(--net-gray);font-size:12px;font-family:'Space Mono',monospace;">Loading your season snapshot…</span></div>`;
+    try {
+      const { totals, streaks } = await computeSeasonSnapshotData();
+      const gamesThisSeason = totals[name] || 0;
+      const streak = streaks[name] || 0;
+
+      let nextDayLabel = 'None confirmed yet';
+      for (const plan of lastDayPlans) {
+        if (plan.closed || plan.playing.length < 4) continue;
+        if (!plan.playing.some(r => r.name === name)) continue;
+        const d = weekDays[plan.idx];
+        nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+        break;
+      }
+
+      slot.innerHTML = `
+        <div class="snapshot-card">
+          <div class="snapshot-stat"><span class="val">${gamesThisSeason}</span><span class="lbl">Games this season</span></div>
+          <div class="snapshot-stat"><span class="val">${streak}</span><span class="lbl">Week streak</span></div>
+          <div class="snapshot-stat"><span class="val" style="font-size:14px;">${escapeHtml(nextDayLabel)}</span><span class="lbl">Next confirmed day</span></div>
+        </div>`;
+    } catch (e) {
+      slot.innerHTML = '';
+    }
+  }
+
   nameSelect.addEventListener('change', () => {
     if (nameSelect.value === '__sub__') {
       subNameInput.style.display = 'block';
@@ -891,9 +1093,13 @@
       maxStreakInput.value = '';
       maxWeeklyInput.value = '';
       setOutState(false);
+      document.getElementById('personalSnapshotSlot').innerHTML = '';
     } else {
       subNameInput.style.display = 'none';
-      if (nameSelect.value) populateFormForName(nameSelect.value);
+      if (nameSelect.value) {
+        populateFormForName(nameSelect.value);
+        renderPersonalSnapshot(nameSelect.value);
+      }
     }
     if (lastResponses.length > 0 || closedDays.length > 0) renderBoard(lastResponses);
   });
@@ -1267,6 +1473,145 @@
     return lines.join('\n');
   }
 
+  function wrapCanvasText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let current = '';
+    words.forEach(word => {
+      const test = current ? current + ' ' + word : word;
+      if (ctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  async function generateWeeklyGraphic(dayPlans) {
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+
+    const W = 900;
+    const rowH = 150;
+    const headerH = 170;
+    const footerH = 50;
+    const H = headerH + dayPlans.length * rowH + footerH;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#142B3D';
+    ctx.fillRect(0, 0, W, H);
+
+    // Header
+    ctx.fillStyle = '#0B1B28';
+    ctx.fillRect(0, 0, W, headerH);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#D7F23C';
+    ctx.font = '11px "Space Mono", monospace';
+    ctx.fillText('TENNIS AVAILABILITY', W / 2, 42);
+    ctx.fillStyle = '#F2F5F0';
+    ctx.font = '900 42px "Archivo Black", sans-serif';
+    ctx.fillText('NSRC Early Birds', W / 2, 95);
+    ctx.fillStyle = '#8CA0AF';
+    ctx.font = '14px "Space Mono", monospace';
+    ctx.fillText(fmtRange(), W / 2, 130);
+
+    // Day rows
+    let y = headerH;
+    dayPlans.forEach(plan => {
+      const d = weekDays[plan.idx];
+      const dateLabel = `${DOW[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
+      const rowTop = y;
+      ctx.textAlign = 'left';
+
+      ctx.fillStyle = plan.closed ? '#C1502B' : (plan.playing.length >= 4 ? '#D7F23C' : '#8CA0AF');
+      ctx.font = '900 22px "Archivo Black", sans-serif';
+      ctx.fillText(dateLabel, 40, rowTop + 36);
+
+      let bodyLine1 = '';
+      let bodyLine2 = '';
+      if (plan.closed) {
+        bodyLine1 = 'Club closed';
+      } else if (plan.playing.length >= 4) {
+        const startLabel = getStartTime(plan);
+        bodyLine1 = `${startLabel}–${END_TIME_LABEL}`;
+        bodyLine2 = plan.playing.map(r => r.name).join(', ');
+      } else if (plan.available.length === 0) {
+        bodyLine1 = 'No one available';
+      } else {
+        bodyLine1 = `Only ${plan.available.length} available (need 4)`;
+      }
+
+      ctx.fillStyle = '#8CA0AF';
+      ctx.font = '14px "Space Mono", monospace';
+      ctx.fillText(bodyLine1, 40, rowTop + 62);
+
+      if (bodyLine2) {
+        ctx.fillStyle = '#F2F5F0';
+        ctx.font = '18px "Inter", sans-serif';
+        const wrapped = wrapCanvasText(ctx, bodyLine2, W - 80);
+        wrapped.slice(0, 2).forEach((line, li) => {
+          ctx.fillText(line, 40, rowTop + 90 + li * 24);
+        });
+      }
+
+      if (!plan.closed && plan.playing.length >= 4) {
+        const pairs = suggestPairs(plan.playing);
+        if (pairs) {
+          ctx.fillStyle = '#A9C22C';
+          ctx.font = '13px "Space Mono", monospace';
+          ctx.fillText(`${pairs[0].join(' & ')} vs ${pairs[1].join(' & ')}`, 40, rowTop + 138);
+        }
+      }
+
+      const w = weatherByDay[plan.idx];
+      if (w && !plan.closed) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#8CA0AF';
+        ctx.font = '13px "Inter", sans-serif';
+        const tempStr = (w.startTemp != null && w.finishTemp != null)
+          ? `${Math.round(w.startTemp)}°→${Math.round(w.finishTemp)}°F`
+          : `${Math.round(w.startTemp ?? w.finishTemp)}°F`;
+        ctx.fillText(`${w.comfort.emoji} ${tempStr}`, W - 40, rowTop + 36);
+        ctx.textAlign = 'left';
+      }
+
+      y += rowH;
+      ctx.strokeStyle = 'rgba(242,245,240,0.14)';
+      ctx.beginPath();
+      ctx.moveTo(40, y - 8);
+      ctx.lineTo(W - 40, y - 8);
+      ctx.stroke();
+    });
+
+    // Footer
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8CA0AF';
+    ctx.font = '11px "Space Mono", monospace';
+    ctx.fillText('NSRC Early Birds — indoor doubles', W / 2, H - 18);
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => {
+        if (!blob) { reject(new Error('Could not generate image')); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nsrc-early-birds-${weekKey}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        resolve();
+      }, 'image/png');
+    });
+  }
+
   function highlightNames(names, selectedName) {
     return names.map(n => n === selectedName
       ? `<strong style="color:var(--ball-yellow);">${escapeHtml(n)}</strong>`
@@ -1394,6 +1739,7 @@
           ${dayLines}
           <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
           <button type="button" class="copy-lineup-btn" id="copyLineupBtn">Copy lineup to clipboard</button>
+          <button type="button" class="copy-lineup-btn" id="downloadGraphicBtn" style="margin-top:8px;">📸 Download weekly graphic</button>
         </div>
       </div>`;
 
@@ -1427,6 +1773,22 @@
           copyBtn.textContent = 'Copy failed — select manually';
         }
         setTimeout(() => { copyBtn.textContent = 'Copy lineup to clipboard'; }, 2000);
+      });
+    }
+
+    const graphicBtn = document.getElementById('downloadGraphicBtn');
+    if (graphicBtn) {
+      graphicBtn.addEventListener('click', async () => {
+        const originalText = graphicBtn.textContent;
+        graphicBtn.textContent = 'Generating…';
+        try {
+          await generateWeeklyGraphic(lastDayPlans);
+          graphicBtn.textContent = 'Downloaded!';
+        } catch (e) {
+          graphicBtn.textContent = 'Failed — try again';
+          console.error('Graphic generation error:', e);
+        }
+        setTimeout(() => { graphicBtn.textContent = originalText; }, 2000);
       });
     }
   }
@@ -1471,6 +1833,7 @@
     if (tag) tag.textContent = `Updated ${timeLabel}`;
     if (!didInitialPopulate && nameSelect.value) {
       populateFormForName(nameSelect.value);
+      renderPersonalSnapshot(nameSelect.value);
       didInitialPopulate = true;
     }
   }
