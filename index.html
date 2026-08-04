@@ -537,7 +537,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.4</div>
+  <div class="version-tag">v4.5</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -925,7 +925,7 @@
       const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
       const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= NEXT_DAY_CUTOFF_HOUR;
       if (isPastDay || isTodayPastCutoff) continue; // already happened (or today's match is over) — skip
-      nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      nextDayLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()} · ${getStartTime(plan)}`;
       break;
     }
 
