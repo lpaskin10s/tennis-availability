@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.7</div>
+  <div class="version-tag">v4.8</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1566,14 +1566,18 @@
     dayPlans.forEach(plan => plan.playing.forEach(r => { playCountTotal[r.name]++; }));
 
     function isDayInPast(plan) {
-      // For this list, "past" means a fully-completed calendar day — today
-      // stays in the main view all day (people check in on today's match
-      // any time), it only drops to "earlier this week" once it's tomorrow.
+      // Same 9am cutoff used everywhere else in the app (Season Stats, the
+      // personal snapshot) — once the match is over, that day is done, full
+      // stop, so it collapses into "earlier this week" just like any other
+      // past day rather than staying pinned at the top.
+      const CUTOFF_HOUR = 9;
       const now = new Date();
       const todayDateOnly = new Date(now); todayDateOnly.setHours(0, 0, 0, 0);
       const d = weekDays[plan.idx];
       const dayDateOnly = new Date(d); dayDateOnly.setHours(0, 0, 0, 0);
-      return dayDateOnly.getTime() < todayDateOnly.getTime();
+      const isPastDay = dayDateOnly.getTime() < todayDateOnly.getTime();
+      const isTodayPastCutoff = dayDateOnly.getTime() === todayDateOnly.getTime() && now.getHours() >= CUTOFF_HOUR;
+      return isPastDay || isTodayPastCutoff;
     }
 
     function renderDayLine(plan) {
