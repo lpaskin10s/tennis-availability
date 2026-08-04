@@ -271,25 +271,28 @@
     background: var(--court-navy-deep);
     border: 1px solid var(--ball-yellow-dim);
     border-radius: 10px;
-    padding: 12px 14px;
+    padding: 12px 16px;
     margin: -6px 0 18px 0;
     display: flex;
-    gap: 18px;
+    align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
+    gap: 6px 12px;
   }
-  .snapshot-stat { text-align: left; }
-  .snapshot-stat .val {
-    font-family: 'Archivo Black', sans-serif;
-    font-size: 18px;
-    color: var(--ball-yellow);
-    display: block;
-  }
-  .snapshot-stat .lbl {
+  .snapshot-card .lbl {
     font-family: 'Space Mono', monospace;
-    font-size: 10px;
+    font-size: 12px;
+    font-weight: 700;
     color: var(--net-gray);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .snapshot-card .val {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    color: var(--ball-yellow);
+    white-space: nowrap;
   }
 
   .out-toggle {
@@ -537,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.5</div>
+  <div class="version-tag">v4.6</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -931,7 +934,8 @@
 
     slot.innerHTML = `
       <div class="snapshot-card">
-        <div class="snapshot-stat"><span class="val" style="font-size:16px;">${escapeHtml(nextDayLabel)}</span><span class="lbl">Next confirmed day</span></div>
+        <span class="lbl">Next confirmed day</span>
+        <span class="val">${escapeHtml(nextDayLabel)}</span>
       </div>`;
   }
 
