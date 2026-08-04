@@ -108,7 +108,7 @@ export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments"];
+  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments", "getEarlyWarningConfig", "setEarlyWarningConfig"];
   if (!week && !weekExemptActions.includes(action)) return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
@@ -247,6 +247,26 @@ export default async (req, context) => {
     try { payments = JSON.parse(paymentsParam); } catch (e) { return json({ error: "invalid payments" }, 400); }
     await store.setJSON(`payments:${season}`, payments);
     return json({ ok: true, payments });
+  }
+
+  if (action === "getEarlyWarningConfig") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const cfg = (await store.get("earlyWarningConfig", { type: "json" })) || { enabled: true, dayOfWeek: 0, hour: 17, timezone: "America/New_York" };
+    return json({ config: cfg });
+  }
+
+  if (action === "setEarlyWarningConfig") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const enabled = url.searchParams.get("enabled") === "true";
+    const dayOfWeek = Number(url.searchParams.get("dayOfWeek"));
+    const hour = Number(url.searchParams.get("hour"));
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) return json({ error: "invalid dayOfWeek" }, 400);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return json({ error: "invalid hour" }, 400);
+    const cfg = { enabled, dayOfWeek, hour, timezone: "America/New_York" };
+    await store.setJSON("earlyWarningConfig", cfg);
+    return json({ ok: true, config: cfg });
   }
 
   return json({ error: "unknown action" }, 400);

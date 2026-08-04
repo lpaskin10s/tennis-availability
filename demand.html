@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demand Patterns — NSRC Early Birds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#142B3D">
+<style>
+  :root {
+    --court-navy: #142B3D;
+    --court-navy-deep: #0B1B28;
+    --panel: #1B3A50;
+    --ball-yellow: #D7F23C;
+    --ball-yellow-dim: #A9C22C;
+    --chalk: #F2F5F0;
+    --clay: #C1502B;
+    --clay-dim: #8F3C20;
+    --net-gray: #8CA0AF;
+    --line: rgba(242,245,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--court-navy);
+    color: var(--chalk);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+  .header {
+    background: var(--court-navy-deep);
+    border-bottom: 2px solid var(--line);
+    padding: 28px 20px 22px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--ball-yellow);
+  }
+  h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: clamp(26px, 6vw, 38px);
+    margin: 6px 0 4px;
+  }
+  .sub { color: var(--net-gray); font-size: 13px; font-family: 'Space Mono', monospace; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 0; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 22px;
+  }
+  .methodology {
+    font-size: 12px;
+    color: var(--net-gray);
+    line-height: 1.6;
+  }
+  .methodology strong { color: var(--chalk); }
+  .loading { text-align: center; color: var(--net-gray); padding: 40px 10px; font-family: 'Space Mono', monospace; font-size: 13px; }
+  .day-row {
+    margin-bottom: 20px;
+  }
+  .day-row:last-child { margin-bottom: 0; }
+  .day-row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .day-name {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 16px;
+  }
+  .day-avg {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--net-gray);
+  }
+  .bar-track {
+    background: var(--court-navy-deep);
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--ball-yellow);
+    border-radius: 6px;
+  }
+  .day-breakdown {
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+    color: var(--net-gray);
+    font-family: 'Space Mono', monospace;
+  }
+  .day-breakdown .over { color: var(--clay); }
+  .day-breakdown .short { color: var(--ball-yellow-dim); }
+  .back-link { display: block; text-align: center; color: var(--net-gray); font-size: 12px; font-family: 'Space Mono', monospace; text-decoration: underline; margin-top: 10px; }
+  .version-tag { margin-top: 6px; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: var(--net-gray); opacity: 0.6; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="eyebrow">Tennis Availability</div>
+  <h1>Demand Patterns</h1>
+  <div class="sub" id="rangeLabel">—</div>
+  <div class="version-tag">v1.0</div>
+</div>
+
+<div class="wrap">
+  <div class="card" id="methodologyCard" style="display:none;">
+    <div class="methodology" id="methodologyText"></div>
+  </div>
+
+  <div class="card">
+    <div class="loading" id="loadingMsg">Crunching the numbers…</div>
+    <div id="daysContainer" style="display:none;"></div>
+  </div>
+
+  <a class="back-link" href="/">← Back to the schedule</a>
+</div>
+
+<script>
+(function() {
+  const API_URL = '/api/availability';
+  const DOW_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const DOW_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  function isoDate(d) { return d.toISOString().slice(0,10); }
+
+  function getWeekStartFor(date) {
+    const d = new Date(date);
+    d.setHours(0,0,0,0);
+    const daysSinceSaturday = (d.getDay() + 1) % 7;
+    d.setDate(d.getDate() - daysSinceSaturday);
+    return d;
+  }
+
+  async function fetchWeek(weekKey) {
+    try {
+      const params = new URLSearchParams({ action: 'list', week: weekKey });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`${API_URL}?${params.toString()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function run() {
+    const today = new Date();
+    const currentWeekStart = getWeekStartFor(today);
+
+    // Season runs June 1 through the following May 31 (matches the rest of the app).
+    const currentSeasonYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
+    const seasonStartWeek = getWeekStartFor(new Date(currentSeasonYear, 5, 1));
+
+    document.getElementById('rangeLabel').textContent =
+      `${seasonStartWeek.toLocaleDateString(undefined, {month:'short', day:'numeric'})} – ${today.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'})} (this season)`;
+
+    const weekStarts = [];
+    let cursor = new Date(seasonStartWeek);
+    while (cursor <= currentWeekStart) {
+      weekStarts.push(new Date(cursor));
+      cursor = new Date(cursor);
+      cursor.setDate(cursor.getDate() + 7);
+    }
+
+    const weekDataList = await Promise.all(weekStarts.map(ws => fetchWeek(isoDate(ws))));
+
+    // Per weekday (0=Mon..4=Fri): counts of available people each week it wasn't closed
+    const counts = [[], [], [], [], []];
+    let weeksConsidered = 0;
+
+    weekStarts.forEach((ws, wi) => {
+      const data = weekDataList[wi];
+      if (!data) return;
+      const responses = data.responses || [];
+      const closedDays = data.closedDays || [];
+      const hasAnyData = responses.length > 0 || closedDays.length > 0;
+      if (!hasAnyData) return;
+      weeksConsidered++;
+      for (let idx = 0; idx <= 4; idx++) {
+        if (closedDays.includes(idx)) continue;
+        const available = responses.filter(r => !r.out && r.days.includes(idx)).length;
+        counts[idx].push(available);
+      }
+    });
+
+    const dayStats = counts.map((arr, idx) => {
+      const n = arr.length;
+      if (n === 0) return { idx, avg: 0, over: 0, exact: 0, short: 0, n: 0 };
+      const avg = arr.reduce((a,b) => a+b, 0) / n;
+      const over = arr.filter(c => c > 4).length;
+      const exact = arr.filter(c => c === 4).length;
+      const short = arr.filter(c => c < 4).length;
+      return { idx, avg, over, exact, short, n };
+    });
+
+    const maxAvg = Math.max(1, ...dayStats.map(d => d.avg));
+
+    const methodologyCard = document.getElementById('methodologyCard');
+    document.getElementById('methodologyText').innerHTML = `
+      <strong>How this is calculated:</strong> looks at every week's raw sign-up count for each
+      weekday this season (${weeksConsidered} week${weeksConsidered === 1 ? '' : 's'} with data so far),
+      skipping any week a day was marked closed. "Oversubscribed" means more than 4 people signed up
+      that day (someone had to sit out); "short" means fewer than 4 (day was at risk). This is about
+      raw sign-up demand, not the fairness-adjusted lineup — no manual entry involved, it's all pulled
+      from existing weekly responses.
+    `;
+    methodologyCard.style.display = 'block';
+
+    const container = document.getElementById('daysContainer');
+    container.innerHTML = dayStats.map(d => {
+      const pct = Math.round((d.avg / maxAvg) * 100);
+      const overPct = d.n > 0 ? Math.round((d.over / d.n) * 100) : 0;
+      const shortPct = d.n > 0 ? Math.round((d.short / d.n) * 100) : 0;
+      return `
+        <div class="day-row">
+          <div class="day-row-head">
+            <span class="day-name">${DOW_LABELS[d.idx]}</span>
+            <span class="day-avg">avg ${d.avg.toFixed(1)} signed up</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
+          <div class="day-breakdown">
+            <span class="over">${overPct}% oversubscribed</span>
+            <span>${d.n > 0 ? Math.round((d.exact/d.n)*100) : 0}% exactly 4</span>
+            <span class="short">${shortPct}% short</span>
+            <span style="opacity:0.6;">(${d.n} week${d.n===1?'':'s'} counted)</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('loadingMsg').style.display = 'none';
+    container.style.display = 'block';
+  }
+
+  run().catch((e) => {
+    console.error('Demand Patterns failed:', e);
+    const loadingMsg = document.getElementById('loadingMsg');
+    loadingMsg.textContent = "Couldn't load demand data — try refreshing, or check back in a bit.";
+    loadingMsg.style.color = 'var(--clay)';
+  });
+})();
+</script>
+</body>
+</html>

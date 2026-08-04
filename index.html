@@ -512,7 +512,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v3.12</div>
+  <div class="version-tag">v3.14</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -564,6 +564,7 @@
 
   <div style="text-align:center; margin: 30px 0 10px;">
     <a href="stats.html" style="color:var(--net-gray); opacity:0.5; font-size:11px; font-family:'Space Mono',monospace; text-decoration:underline;">📊 Season Stats</a>
+    <a href="demand.html" style="color:var(--net-gray); opacity:0.5; font-size:11px; font-family:'Space Mono',monospace; text-decoration:underline; margin-left:10px;">📈 Demand Patterns</a>
   </div>
 
   <div style="text-align:center; margin: 10px 0 10px;">
@@ -1087,6 +1088,23 @@
     if (!data.ok) throw new Error(data.error || 'Save failed');
   }
 
+  async function fetchEarlyWarningConfig() {
+    const params = new URLSearchParams({ action: 'getEarlyWarningConfig', key: adminKey });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    return data.config || { enabled: true, dayOfWeek: 0, hour: 17 };
+  }
+
+  async function saveEarlyWarningConfig(enabled, dayOfWeek, hour) {
+    const params = new URLSearchParams({
+      action: 'setEarlyWarningConfig', key: adminKey,
+      enabled: enabled ? 'true' : 'false', dayOfWeek: String(dayOfWeek), hour: String(hour)
+    });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
   function slugSafe(name) {
     return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
@@ -1511,6 +1529,28 @@
           <button class="primary admin-btn" id="enablePushBtn">Enable notifications on this device</button>
           <div class="status-msg admin-status" id="pushStatusMsg"></div>
 
+          <label class="field-label" style="margin-top:22px;">Early warning alert timing</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <input type="checkbox" id="ewEnabledCheckbox" style="width:auto; margin-bottom:0;">
+            <label for="ewEnabledCheckbox" style="font-size:13px; color:var(--chalk);">Enabled</label>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="ewDaySelect" style="margin-bottom:0;">
+              <option value="0">Sunday</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+            </select>
+            <select id="ewHourSelect" style="margin-bottom:0;">
+              ${Array.from({length: 24}, (_, h) => `<option value="${h}">${h === 0 ? '12am' : h < 12 ? h+'am' : h === 12 ? '12pm' : (h-12)+'pm'}</option>`).join('')}
+            </select>
+            <button class="primary admin-btn" id="saveEwConfigBtn" style="width:auto; padding:0 16px;">Save</button>
+          </div>
+          <div class="status-msg admin-status" id="ewConfigStatusMsg"></div>
+
           <label class="field-label" style="margin-top:22px;">Manage players</label>
           <div id="managePlayersSlot"></div>
           <div style="display:flex; gap:8px; margin-top:8px;">
@@ -1541,6 +1581,32 @@
 
     renderAdminManagePlayers();
     renderAdminManagePayments();
+
+    (async () => {
+      try {
+        const cfg = await fetchEarlyWarningConfig();
+        document.getElementById('ewEnabledCheckbox').checked = !!cfg.enabled;
+        document.getElementById('ewDaySelect').value = String(cfg.dayOfWeek);
+        document.getElementById('ewHourSelect').value = String(cfg.hour);
+      } catch (e) { /* leave defaults if this fails to load */ }
+    })();
+
+    document.getElementById('saveEwConfigBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('ewConfigStatusMsg');
+      msg.textContent = 'Saving...';
+      msg.style.color = 'var(--net-gray)';
+      try {
+        const enabled = document.getElementById('ewEnabledCheckbox').checked;
+        const dayOfWeek = Number(document.getElementById('ewDaySelect').value);
+        const hour = Number(document.getElementById('ewHourSelect').value);
+        await saveEarlyWarningConfig(enabled, dayOfWeek, hour);
+        msg.textContent = 'Saved.';
+        msg.style.color = 'var(--ball-yellow)';
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--clay)';
+      }
+    });
 
     document.getElementById('addPlayerBtn').addEventListener('click', async () => {
       const input = document.getElementById('newPlayerInput');
