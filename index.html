@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.9</div>
+  <div class="version-tag">v4.10</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1172,7 +1172,23 @@
     return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
-  function assignFairly(responses) {
+  async function fetchRotationMode() {
+    const params = new URLSearchParams({ action: 'getRotationMode' });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    return (data.config && data.config.mode) || 'balanced';
+  }
+
+  async function saveRotationMode(mode) {
+    const params = new URLSearchParams({ action: 'setRotationMode', key: adminKey, mode });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  let rotationMode = 'balanced';
+
+  function assignFairly(responses, mode) {
     const playCount = {};
     const currentStreak = {};
     const lastPlayedIdx = {};
@@ -1241,8 +1257,12 @@
           // later days short-handed even when people were "available."
           // Counting only days >= idx fixes that by deferring flexible
           // players toward later days instead.
-          const remaining = (r) => r.days.filter(d => d >= idx).length;
-          const availDiff = remaining(a) - remaining(b);
+          // "balanced" counts only days from today onward (defers wide-
+          // availability players to later days); "classic" counts total
+          // weekly availability (the original behavior, tends to front-load
+          // wide-availability players into early days).
+          const scarcity = (r) => mode === 'classic' ? r.days.length : r.days.filter(d => d >= idx).length;
+          const availDiff = scarcity(a) - scarcity(b);
           if (availDiff !== 0) return availDiff;
           // Tertiary: well-mixed weekly shuffle for anyone still tied.
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
@@ -1551,7 +1571,7 @@
         : `<td style="font-family:'Space Mono',monospace;font-weight:700;">${counts[idx]}</td>`
       ).join('') + '<td></td>';
 
-    const dayPlans = assignFairly(responses);
+    const dayPlans = assignFairly(responses, rotationMode);
 
     stampRow.innerHTML = '<td class="name-col"></td>' +
       dayPlans.map(plan => {
@@ -1834,6 +1854,16 @@
           </div>
           <div class="status-msg admin-status" id="ewConfigStatusMsg"></div>
 
+          <label class="field-label" style="margin-top:22px;">Rotation algorithm <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(affects everyone's projected lineup)</span></label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="rotationModeSelect" style="margin-bottom:0;">
+              <option value="balanced">Balanced (spreads flexible players later in the week)</option>
+              <option value="classic">Classic (original behavior)</option>
+            </select>
+            <button class="primary admin-btn" id="saveRotationModeBtn" style="width:auto; padding:0 16px;">Save</button>
+          </div>
+          <div class="status-msg admin-status" id="rotationModeStatusMsg"></div>
+
           <label class="field-label" style="margin-top:22px;">Manage players</label>
           <div id="managePlayersSlot"></div>
           <div style="display:flex; gap:8px; margin-top:8px;">
@@ -1885,6 +1915,29 @@
         await saveEarlyWarningConfig(enabled, dayOfWeek, hour);
         msg.textContent = 'Saved.';
         msg.style.color = 'var(--ball-yellow)';
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--clay)';
+      }
+    });
+
+    (async () => {
+      try {
+        document.getElementById('rotationModeSelect').value = rotationMode;
+      } catch (e) { /* leave default if this fails to load */ }
+    })();
+
+    document.getElementById('saveRotationModeBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('rotationModeStatusMsg');
+      msg.textContent = 'Saving...';
+      msg.style.color = 'var(--net-gray)';
+      try {
+        const mode = document.getElementById('rotationModeSelect').value;
+        await saveRotationMode(mode);
+        rotationMode = mode;
+        msg.textContent = 'Saved. Everyone will see the updated projection on next refresh.';
+        msg.style.color = 'var(--ball-yellow)';
+        await refresh();
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
         msg.style.color = 'var(--clay)';
@@ -2128,7 +2181,7 @@
     renderAdminCard();
   }
 
-  refresh();
+  fetchRotationMode().then(mode => { rotationMode = mode; refresh(); }).catch(() => { refresh(); });
   fetchWeather();
 
   // Auto-refresh the board periodically so people see live updates without
