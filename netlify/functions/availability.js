@@ -108,7 +108,7 @@ export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments", "getEarlyWarningConfig", "setEarlyWarningConfig"];
+  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments", "getEarlyWarningConfig", "setEarlyWarningConfig", "getRotationMode", "setRotationMode"];
   if (!week && !weekExemptActions.includes(action)) return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
@@ -266,6 +266,21 @@ export default async (req, context) => {
     if (!Number.isInteger(hour) || hour < 0 || hour > 23) return json({ error: "invalid hour" }, 400);
     const cfg = { enabled, dayOfWeek, hour, timezone: "America/New_York" };
     await store.setJSON("earlyWarningConfig", cfg);
+    return json({ ok: true, config: cfg });
+  }
+
+  if (action === "getRotationMode") {
+    const cfg = (await store.get("rotationMode", { type: "json" })) || { mode: "balanced" };
+    return json({ config: cfg });
+  }
+
+  if (action === "setRotationMode") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const mode = url.searchParams.get("mode");
+    if (mode !== "classic" && mode !== "balanced") return json({ error: "invalid mode" }, 400);
+    const cfg = { mode };
+    await store.setJSON("rotationMode", cfg);
     return json({ ok: true, config: cfg });
   }
 
