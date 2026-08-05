@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.8</div>
+  <div class="version-tag">v4.9</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1230,10 +1230,19 @@
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
           // Secondary: among people tied on games played, whoever has FEWER
-          // available days this week gets priority — someone who can only
-          // play 2 days has no other chance to make it up if bumped, while
-          // someone free all week can just get picked another day instead.
-          const availDiff = a.days.length - b.days.length;
+          // REMAINING available days (today onward) gets priority — someone
+          // whose only shot this week is today has no other chance if
+          // bumped, while someone who's still free on later days can just
+          // get picked another day instead. Using remaining (not total)
+          // availability matters: a player free all week looks the same on
+          // Monday as Friday under a static count, so wide-availability
+          // players kept getting front-loaded into early days and burning
+          // their weekly cap before the back half of the week — leaving
+          // later days short-handed even when people were "available."
+          // Counting only days >= idx fixes that by deferring flexible
+          // players toward later days instead.
+          const remaining = (r) => r.days.filter(d => d >= idx).length;
+          const availDiff = remaining(a) - remaining(b);
           if (availDiff !== 0) return availDiff;
           // Tertiary: well-mixed weekly shuffle for anyone still tied.
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
