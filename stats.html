@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v1.9</div>
+  <div class="version-tag">v2.0</div>
 </div>
 
 <div class="wrap">
@@ -124,6 +124,25 @@
         </tr>
       </thead>
       <tbody id="statsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="fairnessCard" style="display:none;">
+    <h2 style="margin:0 0 4px; font-size:16px; color:var(--chalk);">Games by day of week</h2>
+    <div class="sub" style="margin-bottom:14px;" id="fairnessSub">Same methodology as the totals above — recorded results where available, otherwise a fair simulation for days that have already passed.</div>
+    <table class="stats" id="fairnessTable">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th class="num">Mon</th>
+          <th class="num">Tue</th>
+          <th class="num">Wed</th>
+          <th class="num">Thu</th>
+          <th class="num">Fri</th>
+          <th class="num">Spread</th>
+        </tr>
+      </thead>
+      <tbody id="fairnessBody"></tbody>
     </table>
   </div>
 
@@ -188,7 +207,7 @@
   // Reconstructs who actually played each day of a given week — same rules
   // as the live scheduler (hard caps, weekly-seeded tie-breaks, closed days,
   // admin-confirmed actual results taking priority over the projection).
-  function tallyWeek(weekKey, responses, closedDays, actualResults, players, now) {
+  function tallyWeek(weekKey, responses, closedDays, actualResults, players, now, mode) {
     const CUTOFF_HOUR = 9;
     const weekDays = [];
     const start = new Date(weekKey + 'T00:00:00');
@@ -208,6 +227,8 @@
     responses.forEach(r => { playCount[r.name] = 0; currentStreak[r.name] = 0; lastPlayedIdx[r.name] = -99; });
 
     const tally = {};
+    const dayTally = {};
+    players.forEach(p => { dayTally[p] = [0, 0, 0, 0, 0]; }); // Mon..Fri
     const todayDateOnly = new Date(now);
     todayDateOnly.setHours(0, 0, 0, 0);
 
@@ -247,7 +268,8 @@
         const byFairness = (a, b) => {
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
-          const availDiff = a.days.length - b.days.length;
+          const scarcity = (r) => mode === 'classic' ? r.days.length : r.days.filter(d => d >= idx).length;
+          const availDiff = scarcity(a) - scarcity(b);
           if (availDiff !== 0) return availDiff;
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
         };
@@ -264,10 +286,14 @@
         }
       });
 
-      playingNames.forEach(n => { tally[n] = (tally[n] || 0) + 1; });
+      playingNames.forEach(n => {
+        tally[n] = (tally[n] || 0) + 1;
+        if (!dayTally[n]) dayTally[n] = [0, 0, 0, 0, 0];
+        dayTally[n][idx]++;
+      });
     });
 
-    return tally;
+    return { tally, dayTally };
   }
 
   function escapeHtml(s) {
@@ -292,6 +318,21 @@
       return data.payments || {};
     } catch (e) {
       return {};
+    }
+  }
+
+  async function fetchRotationMode() {
+    try {
+      const params = new URLSearchParams({ action: 'getRotationMode' });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`${API_URL}?${params.toString()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return 'balanced';
+      const data = await res.json();
+      return (data.config && data.config.mode) || 'balanced';
+    } catch (e) {
+      return 'balanced';
     }
   }
 
@@ -331,7 +372,7 @@
     `;
 
     const weekKeyForFetch = isoDate(currentWeekStart);
-    const [currentData, payments] = await Promise.all([fetchWeek(weekKeyForFetch), fetchPayments(seasonYear)]);
+    const [currentData, payments, rotationMode] = await Promise.all([fetchWeek(weekKeyForFetch), fetchPayments(seasonYear), fetchRotationMode()]);
     const players = (currentData && currentData.players && currentData.players.length > 0)
       ? currentData.players
       : DEFAULT_PLAYERS_FALLBACK;
@@ -345,7 +386,8 @@
     }
 
     const realTally = {};
-    players.forEach(p => { realTally[p] = 0; });
+    const realDayTally = {};
+    players.forEach(p => { realTally[p] = 0; realDayTally[p] = [0, 0, 0, 0, 0]; });
     let assumedWeeksCount = 0;
     let realWeeksCount = 0;
 
@@ -367,9 +409,13 @@
         return;
       }
       realWeeksCount++;
-      const weekTally = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players, today);
+      const { tally: weekTally, dayTally: weekDayTally } = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players, today, rotationMode);
       Object.entries(weekTally).forEach(([name, count]) => {
         realTally[name] = (realTally[name] || 0) + count;
+      });
+      Object.entries(weekDayTally).forEach(([name, counts]) => {
+        if (!realDayTally[name]) realDayTally[name] = [0, 0, 0, 0, 0];
+        counts.forEach((c, i) => { realDayTally[name][i] += c; });
       });
     });
 
@@ -458,6 +504,26 @@
 
     document.getElementById('loadingMsg').style.display = 'none';
     document.getElementById('statsTable').style.display = 'table';
+
+    // Render day-of-week fairness table
+    const fairnessRoster = finalStats.filter(s => (realTally[s.name] || 0) > 0);
+    const fairnessBody = document.getElementById('fairnessBody');
+    if (fairnessRoster.length === 0) {
+      document.getElementById('fairnessCard').style.display = 'none';
+    } else {
+      fairnessBody.innerHTML = fairnessRoster.map(s => {
+        const counts = realDayTally[s.name] || [0, 0, 0, 0, 0];
+        const cells = counts.map(c => `<td class="num">${c}</td>`).join('');
+        const spread = Math.max(...counts) - Math.min(...counts);
+        const spreadClass = spread >= 3 ? 'savings-negative' : spread <= 1 ? 'savings-positive' : '';
+        return `<tr>
+          <td class="name-cell">${escapeHtml(s.name)}</td>
+          ${cells}
+          <td class="num"><span class="${spreadClass}">${spread}</span></td>
+        </tr>`;
+      }).join('');
+      document.getElementById('fairnessCard').style.display = 'block';
+    }
   }
 
   run().catch((e) => {
