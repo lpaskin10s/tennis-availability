@@ -10,7 +10,8 @@ A quick reference for everyone in the group, plus a separate section for the adm
 - Open the link and pick your name from the dropdown at the top.
 - The app remembers your name on your device after your first save — it'll pre-fill next time you open it.
 - If you've already submitted something for the current week, selecting your name automatically loads what you entered so you can review or change it.
-- **Filling in for someone one-off?** Pick **"+ Add a substitute"** at the bottom of the name dropdown instead, and type their name. They'll show up on the board like any other player for that week, but they won't be added to the permanent roster or remembered on the device.
+- **Filling in for someone one-off?** Pick **"+ Add a substitute"** at the bottom of the name dropdown instead, and type their name. They won't be added to the permanent roster, but once they've submitted, their name reappears in the dropdown (labeled "(sub)") for the rest of that week so they — or an admin on their behalf — can go back and change it. It resets to just "+ Add a substitute" again the following week.
+- **Subs only fill actual gaps.** A sub is never scheduled ahead of a core player who's available and eligible that day — the fairness rotation only reaches into the sub pool when the core players available that day can't fill all 4 spots on their own. If core players alone already cover the day, a sub who signed up just shows up as an alternate instead of playing.
 
 ### Setting your availability
 - Tap the days you're free (Monday–Friday only — no weekend play).
@@ -142,5 +143,5 @@ Once you pick your name, a small card appears showing your next confirmed day th
 Next to "Copy lineup to clipboard," a **"📸 Share weekly graphic"** button generates a nicely formatted image of the week — every day, who's playing, suggested teams, and weather. On phones, this opens your device's native share sheet directly — pick Messages or your group text and it's attached in a couple taps, no downloading or hunting through Photos first. On desktop browsers that don't support that, it just downloads the image instead. Nothing gets sent automatically; it's always something you choose to share.
 
 ## A couple of things worth knowing
-- The little version number under the header (e.g. `v4.10`) helps us confirm you're looking at the latest deployed version if something ever seems off — Season Stats has its own separate version number in the same spot.
+- The little version number under the header (e.g. `v4.11`) helps us confirm you're looking at the latest deployed version if something ever seems off — Season Stats has its own separate version number in the same spot.
 - If a feature seems to be behaving unexpectedly, the most useful details to bring back are: your name, the exact day involved, and what limits (if any) you had set that week.

@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.10</div>
+  <div class="version-tag">v4.11</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -772,12 +772,26 @@
       opt.textContent = p;
       nameSelect.appendChild(opt);
     });
+
+    // Anyone who's already submitted as a sub this week gets listed too —
+    // otherwise their entry becomes invisible/unreachable after the initial
+    // save, with no way for them (or an admin on their behalf) to edit it.
+    const subNames = Array.from(new Set(
+      lastResponses.filter(r => r.isSub && !PLAYERS.includes(r.name)).map(r => r.name)
+    ));
+    subNames.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = `${name} (sub)`;
+      nameSelect.appendChild(opt);
+    });
+
     const subOpt = document.createElement('option');
     subOpt.value = '__sub__';
     subOpt.textContent = '+ Add a substitute';
     nameSelect.appendChild(subOpt);
 
-    if (prevValue && (PLAYERS.includes(prevValue) || prevValue === '__sub__')) {
+    if (prevValue && (PLAYERS.includes(prevValue) || subNames.includes(prevValue) || prevValue === '__sub__')) {
       nameSelect.value = prevValue;
     } else if (!playersInitialized) {
       let savedName = null;
@@ -967,7 +981,7 @@
     weekDays.map(d => `<th>${DOW[d.getDay()]}<br>${d.getMonth()+1}/${d.getDate()}</th>`).join('') +
     '<th>Notes</th>';
 
-  async function saveResponse(name, days, note, out, maxStreak, maxWeekly) {
+  async function saveResponse(name, days, note, out, maxStreak, maxWeekly, isSub) {
     const params = new URLSearchParams({
       action: 'save',
       week: weekKey,
@@ -976,7 +990,8 @@
       note: note.trim(),
       out: out ? 'true' : 'false',
       maxstreak: maxStreak ? String(maxStreak) : '',
-      maxweekly: maxWeekly ? String(maxWeekly) : ''
+      maxweekly: maxWeekly ? String(maxWeekly) : '',
+      sub: isSub ? 'true' : 'false'
     });
     let res, text;
     try {
@@ -1268,7 +1283,17 @@
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
         };
 
-        const provisionalPlaying = [...eligible].sort(byFairness).slice(0, 4);
+        const provisionalCore = [...eligible.filter(r => !r.isSub)].sort(byFairness).slice(0, 4);
+        // Subs are a last resort: they only step in when the non-sub pool
+        // alone can't reach 4 that day, and never bump a core player who's
+        // available and eligible. If core players alone already fill the
+        // court, subs just show up as alternates instead of playing.
+        let provisionalPlaying = provisionalCore;
+        if (provisionalPlaying.length < 4) {
+          const need = 4 - provisionalPlaying.length;
+          const sortedSubs = [...eligible.filter(r => r.isSub)].sort(byFairness);
+          provisionalPlaying = provisionalPlaying.concat(sortedSubs.slice(0, need));
+        }
         // Same rule as plain understaffing: fewer than 4 means no real match
         // happens, so nobody's streak/weekly count should move — even if
         // caps (rather than raw headcount) are what caused the shortfall.
@@ -1767,6 +1792,7 @@
     closedDays = data.closedDays;
     actualResults = data.actualResults;
     lastResponses = data.responses;
+    renderNameOptions();
     applyClosedDaysToPicker();
     renderBoard(data.responses);
     if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); }
@@ -1780,20 +1806,27 @@
 
   document.getElementById('submitBtn').addEventListener('click', async () => {
     const statusMsg = document.getElementById('statusMsg');
-    const isSub = nameSelect.value === '__sub__';
-    const name = isSub ? subNameInput.value.trim() : nameSelect.value;
+    const isNewSubEntry = nameSelect.value === '__sub__';
+    const name = isNewSubEntry ? subNameInput.value.trim() : nameSelect.value;
     if (!name) {
-      statusMsg.textContent = isSub ? "Enter the sub's name first." : 'Choose your name first.';
+      statusMsg.textContent = isNewSubEntry ? "Enter the sub's name first." : 'Choose your name first.';
       statusMsg.style.color = 'var(--clay)';
       return;
     }
+    // A person counts as a sub either because they're using the "+ Add a
+    // substitute" flow right now, or because they're editing a response
+    // that was already saved as a sub earlier this week (selected from the
+    // dropdown) — either way this stays true so they don't quietly get
+    // treated as a core player on the next save.
+    const existingResponse = lastResponses.find(r => r.name === name);
+    const isSub = isNewSubEntry || !!(existingResponse && existingResponse.isSub);
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
     statusMsg.textContent = 'Saving...';
     statusMsg.style.color = 'var(--net-gray)';
     try {
-      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value);
-      if (!isSub) {
+      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value, isSub);
+      if (!isNewSubEntry) {
         try { localStorage.setItem(LAST_NAME_KEY, name); } catch (e) { /* ignore */ }
       } else {
         subNameInput.value = '';

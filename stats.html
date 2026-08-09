@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v2.0</div>
+  <div class="version-tag">v2.1</div>
 </div>
 
 <div class="wrap">
@@ -273,7 +273,16 @@
           if (availDiff !== 0) return availDiff;
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
         };
-        const provisional = [...eligible].sort(byFairness).slice(0, 4);
+        // Subs only fill in when the non-sub pool alone can't reach 4 —
+        // mirrors the same rule in index.html's assignFairly, so this
+        // simulation of past unrecorded days matches what the live board
+        // would actually have done.
+        let provisional = [...eligible.filter(r => !r.isSub)].sort(byFairness).slice(0, 4);
+        if (provisional.length < 4) {
+          const need = 4 - provisional.length;
+          const sortedSubs = [...eligible.filter(r => r.isSub)].sort(byFairness);
+          provisional = provisional.concat(sortedSubs.slice(0, need));
+        }
         playing = provisional.length >= 4 ? provisional : [];
         playingNames = playing.map(r => r.name);
       }
