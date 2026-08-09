@@ -146,6 +146,7 @@ export default async (req, context) => {
     const out = url.searchParams.get("out") === "true";
     const maxstreak = url.searchParams.get("maxstreak");
     const maxweekly = url.searchParams.get("maxweekly");
+    const isSub = url.searchParams.get("sub") === "true";
     const respKey = `resp:${week}:${slug(name)}`;
     const previous = await store.get(respKey, { type: "json" });
     const value = {
@@ -155,6 +156,7 @@ export default async (req, context) => {
       out,
       maxstreak: maxstreak ? Number(maxstreak) : null,
       maxweekly: maxweekly ? Number(maxweekly) : null,
+      isSub,
       ts: Date.now()
     };
     await store.setJSON(respKey, value);
