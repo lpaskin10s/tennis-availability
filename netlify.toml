@@ -1,3 +1,19 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+
+# Force every HTML page to revalidate with the server on each load instead of
+# trusting a cached copy. Doesn't slow things down in practice — the browser
+# still gets a fast 304 response when nothing changed — but it guarantees
+# that the moment a new version is deployed, the next page load (or the app
+# being reopened) picks it up immediately instead of silently running old
+# scheduling logic against fresh data.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
