@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.12</div>
+  <div class="version-tag">v4.13</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1217,11 +1217,33 @@
 
     const dayPlans = weekDays.map((d, idx) => {
       if (closedDays.includes(idx)) {
-        return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [], eligibleCount: null };
+        return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [], eligibleCount: null, explain: [] };
       }
 
       const available = responses.filter(r => r.days.includes(idx));
       const actualNames = actualResults[String(idx)];
+
+      // Reasoning snapshot for the "Explain" button — captured from
+      // playCount/streak state as it stood entering this day, before this
+      // day's own result gets folded in below. Used regardless of which
+      // branch below actually decides who plays, so "why" always has real
+      // numbers behind it instead of being reconstructed after the fact.
+      const wouldExceedReason = (r) => {
+        const streakCap = r.maxstreak;
+        const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+        if (!!streakCap && streakIfPlayed > streakCap) return 'streak';
+        const weeklyCap = r.maxweekly;
+        if (!!weeklyCap && playCount[r.name] >= weeklyCap) return 'weekly';
+        return null;
+      };
+      const scarcityFor = (r) => mode === 'classic' ? r.days.length : r.days.filter(d => d >= idx).length;
+      const explain = available.map(r => ({
+        name: r.name,
+        isSub: !!r.isSub,
+        playCountBefore: playCount[r.name],
+        scarcity: scarcityFor(r),
+        capReason: wouldExceedReason(r)
+      }));
 
       let playing;
       let isActual = false;
@@ -1242,16 +1264,7 @@
         // Hard caps: a player's own "max days in a row" / "max days this
         // week" limit is never overridden, even if that leaves the court
         // short of 4. The day is reported honestly as short-staffed instead.
-        const wouldExceed = (r) => {
-          const streakCap = r.maxstreak;
-          const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
-          const streakExceeded = !!streakCap && streakIfPlayed > streakCap;
-
-          const weeklyCap = r.maxweekly;
-          const weeklyExceeded = !!weeklyCap && playCount[r.name] >= weeklyCap;
-
-          return streakExceeded || weeklyExceeded;
-        };
+        const wouldExceed = (r) => wouldExceedReason(r) !== null;
 
         const eligible = available.filter(r => !wouldExceed(r));
         cappedOut = available.filter(r => wouldExceed(r));
@@ -1314,7 +1327,7 @@
         }
       });
 
-      return { idx, closed: false, isActual, available, playing, alternates, cappedOut, eligibleCount };
+      return { idx, closed: false, isActual, available, playing, alternates, cappedOut, eligibleCount, explain };
     });
 
     return dayPlans;
@@ -1634,6 +1647,57 @@
       return isPastDay || isTodayPastCutoff;
     }
 
+    function explainDayForName(plan, name) {
+      const d = weekDays[plan.idx];
+      const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+      if (plan.closed) return `${dateLabel}: courts are closed this day.`;
+
+      const entry = (plan.explain || []).find(e => e.name === name);
+      if (!entry) {
+        return `${dateLabel}: you didn't mark yourself available this day.`;
+      }
+      if (plan.isActual) {
+        return `${dateLabel}: this day already happened, and an admin recorded exactly who played — the usual fairness math doesn't apply after the fact.`;
+      }
+      if (plan.available.length < 4) {
+        return `${dateLabel}: only ${plan.available.length} of the 4 needed marked themselves available, so there's no real game this day regardless of rotation.`;
+      }
+      if (entry.capReason) {
+        const capLabel = entry.capReason === 'streak' ? "your max consecutive days limit" : "your max games this week limit";
+        return `${dateLabel}: you were available, but you'd already hit ${capLabel} — you're sitting out by your own setting, not because of the rotation.`;
+      }
+
+      const isPlaying = plan.playing.some(r => r.name === name);
+      if (isPlaying) {
+        return `${dateLabel}: you're playing — you'd played the fewest games so far this week among the people who could play (or were next in line once tied).`;
+      }
+
+      // Not playing, not capped — genuinely lost the fairness tiebreak.
+      const findEntry = (n) => (plan.explain || []).find(e => e.name === n);
+      const pickedDetails = plan.playing.map(r => {
+        const pe = findEntry(r.name);
+        return pe ? `${r.name} (${pe.playCountBefore} played this week so far${pe.isSub ? ', sub' : ''})` : r.name;
+      }).join(', ');
+
+      let reason;
+      const allPickedAreCore = plan.playing.every(r => {
+        const pe = findEntry(r.name);
+        return pe && !pe.isSub;
+      });
+      if (entry.isSub && allPickedAreCore) {
+        reason = `As a substitute, you only get pulled in when the regular players available that day can't reach 4 on their own — this time they could, so priority went to them.`;
+      } else {
+        const playedCounts = plan.playing.map(r => findEntry(r.name)).filter(Boolean).map(pe => pe.playCountBefore);
+        const minPlayed = playedCounts.length ? Math.min(...playedCounts) : 0;
+        if (entry.playCountBefore > minPlayed) {
+          reason = `You'd already played ${entry.playCountBefore} game${entry.playCountBefore === 1 ? '' : 's'} this week — more than at least one person who got picked (${minPlayed}) — so they were prioritized ahead of you.`;
+        } else {
+          reason = `You were tied on games played with the people who got picked, but they had fewer remaining chances to play later this week than you do, so they got priority this time.`;
+        }
+      }
+      return `${dateLabel}: not playing. The 4 spots went to: ${pickedDetails}. ${reason}`;
+    }
+
     function renderDayLine(plan) {
       const d = weekDays[plan.idx];
       const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
@@ -1651,6 +1715,7 @@
       if (plan.closed) {
         return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
       }
+      const whyBtn = selectedName ? ` <button type="button" class="small-btn explain-btn" data-idx="${plan.idx}">Why?</button>` : '';
       if (plan.playing.length >= 4) {
         const startLabel = getStartTime(plan);
         const isSelfPlaying = selectedName && plan.playing.some(r => r.name === selectedName);
@@ -1660,15 +1725,15 @@
           ? `<div style="font-size:11px;color:var(--net-gray);margin:2px 0 4px 0;">Suggested teams: ${escapeHtml(pairs[0].join(' & '))} <span style="color:var(--ball-yellow-dim);">vs</span> ${escapeHtml(pairs[1].join(' & '))}</div>`
           : '';
         const lineStyle = isSelfPlaying ? 'border-left:3px solid var(--ball-yellow); padding-left:8px; background:rgba(215,242,60,0.06); border-radius:4px;' : '';
-        return `<div class="txt-sub" style="${lineStyle}"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${highlightNames(plan.playing.map(r => r.name), selectedName)}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${pairLine}${weatherLine}</div>`;
+        return `<div class="txt-sub" style="${lineStyle}"><strong style="color:var(--chalk)">${dateLabel} (${startLabel}–${END_TIME_LABEL}):</strong> ${highlightNames(plan.playing.map(r => r.name), selectedName)}${altNote}${confirmedTag} <button type="button" class="small-btn add-cal-btn" data-idx="${plan.idx}">+ Calendar</button>${whyBtn}${pairLine}${weatherLine}</div>`;
       }
       if (plan.available.length === 0) {
-        return `<div class="txt-sub">${dateLabel}: no one available${weatherLine}</div>`;
+        return `<div class="txt-sub">${dateLabel}: no one available${weatherLine}${whyBtn}</div>`;
       }
       if (plan.cappedOut.length > 0) {
-        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)${weatherLine}</div>`;
+        return `<div class="txt-sub">${dateLabel}: ${plan.available.length} available, but ${highlightNames(plan.cappedOut.map(r => r.name), selectedName)} ${plan.cappedOut.length > 1 ? 'are' : 'is'} at their limit — only ${plan.eligibleCount ?? 0} eligible (need 4)${weatherLine}${whyBtn}</div>`;
       }
-      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}${weatherLine}</div>`;
+      return `<div class="txt-sub">${dateLabel}: only ${plan.available.length} available (need 4) — ${highlightNames(plan.available.map(r => r.name), selectedName)}${weatherLine}${whyBtn}</div>`;
     }
 
     const upcomingPlans = dayPlans.filter(p => !isDayInPast(p));
@@ -1724,6 +1789,15 @@
           'Playing: ' + plan.playing.map(r => r.name).join(', ')
         );
         downloadICS(ics, `tennis-${isoDate(d)}.ics`);
+      });
+    });
+
+    bestBannerSlot.querySelectorAll('.explain-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.idx);
+        const plan = lastDayPlans.find(p => p.idx === idx);
+        if (!plan || !selectedName) return;
+        alert(explainDayForName(plan, selectedName));
       });
     });
 
