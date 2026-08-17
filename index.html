@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.13</div>
+  <div class="version-tag">v4.14</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1661,6 +1661,17 @@
       }
       if (plan.available.length < 4) {
         return `${dateLabel}: only ${plan.available.length} of the 4 needed marked themselves available, so there's no real game this day regardless of rotation.`;
+      }
+      if (plan.playing.length === 0) {
+        // Enough people marked themselves available, but caps thinned the
+        // eligible pool below 4 — nobody played this day at all. This isn't
+        // "you lost the rotation," it's "the day didn't happen," so it needs
+        // its own explanation instead of falling into the tiebreak branch
+        // below, which assumes 4 people actually got picked.
+        const cappedNames = (plan.cappedOut || []).map(r => r.name);
+        const cappedNote = cappedNames.length > 0 ? ` ${cappedNames.join(', ')} ${cappedNames.length > 1 ? 'are' : 'is'} at their limit,` : '';
+        const selfNote = entry.capReason ? ` including you, at your ${entry.capReason === 'streak' ? 'max consecutive days' : 'max games this week'} limit,` : '';
+        return `${dateLabel}: ${plan.available.length} people were available, but${cappedNote}${selfNote} only ${plan.eligibleCount ?? 0} were eligible — not enough for a real game this day, regardless of the rotation.`;
       }
       if (entry.capReason) {
         const capLabel = entry.capReason === 'streak' ? "your max consecutive days limit" : "your max games this week limit";
