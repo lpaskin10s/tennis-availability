@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.14</div>
+  <div class="version-tag">v4.15</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1236,7 +1236,27 @@
         if (!!weeklyCap && playCount[r.name] >= weeklyCap) return 'weekly';
         return null;
       };
-      const scarcityFor = (r) => mode === 'classic' ? r.days.length : r.days.filter(d => d >= idx).length;
+      // "balanced" mode's scarcity score, used both for the day's fairness
+      // sort and for the "Why?" explanation. Two adjustments beyond raw
+      // remaining-days-available:
+      //  1. Weekly-cap aware: someone free 5 more days but capped at 3 games
+      //     has 2 spare days of real slack, not 5 — otherwise a player who
+      //     honestly limits their own games looks maximally flexible and
+      //     gets deprioritized for being honest about wanting fewer games.
+      //  2. Thresholded, not continuous: slack beyond 3 days doesn't earn
+      //     any extra priority. Otherwise the tiebreak rewards shaving a day
+      //     or two off what you list just to look scarcer than you are —
+      //     capping the benefit at "genuinely constrained" (0-2 spare days)
+      //     removes the incentive to game it while still protecting anyone
+      //     truly limited. "classic" mode is left untouched on purpose, as
+      //     the literal original behavior for comparison/rollback.
+      const scarcityFor = (r) => {
+        if (mode === 'classic') return r.days.length;
+        const remainingDays = r.days.filter(d => d >= idx).length;
+        const remainingCapacity = r.maxweekly ? Math.max(0, r.maxweekly - playCount[r.name]) : Infinity;
+        const slack = remainingCapacity === Infinity ? remainingDays : Math.max(0, remainingDays - remainingCapacity);
+        return Math.min(slack, 3);
+      };
       const explain = available.map(r => ({
         name: r.name,
         isSub: !!r.isSub,
@@ -1285,12 +1305,7 @@
           // later days short-handed even when people were "available."
           // Counting only days >= idx fixes that by deferring flexible
           // players toward later days instead.
-          // "balanced" counts only days from today onward (defers wide-
-          // availability players to later days); "classic" counts total
-          // weekly availability (the original behavior, tends to front-load
-          // wide-availability players into early days).
-          const scarcity = (r) => mode === 'classic' ? r.days.length : r.days.filter(d => d >= idx).length;
-          const availDiff = scarcity(a) - scarcity(b);
+          const availDiff = scarcityFor(a) - scarcityFor(b);
           if (availDiff !== 0) return availDiff;
           // Tertiary: well-mixed weekly shuffle for anyone still tied.
           return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
