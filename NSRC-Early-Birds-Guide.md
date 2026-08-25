@@ -10,6 +10,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 - Open the link and pick your name from the dropdown at the top.
 - The app remembers your name on your device after your first save — it'll pre-fill next time you open it.
 - If you've already submitted something for the current week, selecting your name automatically loads what you entered so you can review or change it.
+- **Wondering why you are/aren't playing a certain day?** Once you've selected your name, a small **"Why?"** button appears next to that day in the lineup. It gives a plain-English reason using your real numbers — you didn't mark that day available, you'd hit your own weekly/streak limit, you're a sub who wasn't needed that day, or you simply had more games than someone who got picked. For a day already recorded as played, it'll just say an admin locked that one in as-is.
 - **Filling in for someone one-off?** Pick **"+ Add a substitute"** at the bottom of the name dropdown instead, and type their name. They won't be added to the permanent roster, but once they've submitted, their name reappears in the dropdown (labeled "(sub)") for the rest of that week so they — or an admin on their behalf — can go back and change it. It resets to just "+ Add a substitute" again the following week.
 - **Subs only fill actual gaps.** A sub is never scheduled ahead of a core player who's available and eligible that day — the fairness rotation only reaches into the sub pool when the core players available that day can't fill all 4 spots on their own. If core players alone already cover the day, a sub who signed up just shows up as an alternate instead of playing.
 
@@ -46,7 +47,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 
 ### How fairness works (so "why did I get bumped?" makes sense)
 - If more than 4 people want to play a day, priority goes to whoever's played **fewer days so far that week**.
-- If that's still tied, priority goes to whoever has **fewer remaining chances to play this week** — how that's measured depends on the admin's chosen rotation mode (see the admin section below), but the idea either way is the same: someone with limited options gets priority over someone who's still flexible, since the flexible player has other chances to get picked and the constrained player doesn't.
+- If that's still tied, priority goes to whoever has **fewer remaining chances to play this week** — how that's measured depends on the admin's chosen rotation mode (see the admin section below), but the idea either way is the same: someone with limited options gets priority over someone who's still flexible, since the flexible player has other chances to get picked and the constrained player doesn't. In Balanced mode, this also accounts for your own "max games this week" setting if you use one — wanting fewer games isn't treated as being more flexible, and listing fewer real days than you actually have doesn't help once you're already reasonably flexible (3+ real spare days all count the same).
 - If it's still a genuine tie after that, the app uses a well-mixed, date-seeded shuffle to decide — not alphabetical, and not the same people favored every week.
 - Nothing carries over between weeks — every week starts even.
 
@@ -115,7 +116,7 @@ This has to be done once per device/person — sharing the admin link with a co-
 
 **Rotation algorithm**
 - A **"Rotation algorithm"** dropdown lets you pick between **Balanced** (default) and **Classic** — this is the tiebreak used in "How fairness works" above, for the second round when players are tied on games-played-so-far.
-- **Balanced** looks at each person's *remaining* available days from today onward, which defers people who are free later in the week too — so flexible players' games spread out across Mon–Fri instead of clustering into the first days the app fills.
+- **Balanced** looks at each person's *remaining* available days from today onward (adjusted for their own weekly game cap if they set one, and capped at "3+ spare days = fully flexible" so shaving a day or two off what you list doesn't earn extra priority), which defers people who are free later in the week too — so flexible players' games spread out across Mon–Fri instead of clustering into the first days the app fills.
 - **Classic** looks at each person's *total* available days for the whole week — the original behavior, which can front-load flexible players into early days.
 - Saved server-side and applies immediately for everyone, not just your device.
 - Days already recorded via "Mark who actually played a day" are never recalculated regardless of which mode is active — that data is ground truth either way.
@@ -143,5 +144,5 @@ Once you pick your name, a small card appears showing your next confirmed day th
 Next to "Copy lineup to clipboard," a **"📸 Share weekly graphic"** button generates a nicely formatted image of the week — every day, who's playing, suggested teams, and weather. On phones, this opens your device's native share sheet directly — pick Messages or your group text and it's attached in a couple taps, no downloading or hunting through Photos first. On desktop browsers that don't support that, it just downloads the image instead. Nothing gets sent automatically; it's always something you choose to share.
 
 ## A couple of things worth knowing
-- The little version number under the header (e.g. `v4.11`) helps us confirm you're looking at the latest deployed version if something ever seems off — Season Stats has its own separate version number in the same spot.
+- The little version number under the header (e.g. `v4.15`) helps us confirm you're looking at the latest deployed version if something ever seems off — Season Stats has its own separate version number in the same spot.
 - If a feature seems to be behaving unexpectedly, the most useful details to bring back are: your name, the exact day involved, and what limits (if any) you had set that week.
