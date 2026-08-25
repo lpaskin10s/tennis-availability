@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>What If — NSRC Early Birds (sandbox)</title>
+<style>
+  :root {
+    --court-navy: #142B3D;
+    --court-navy-deep: #0B1B28;
+    --panel: #1B3A50;
+    --ball-yellow: #D7F23C;
+    --ball-yellow-dim: #A9C22C;
+    --chalk: #F2F5F0;
+    --clay: #C1502B;
+    --clay-dim: #8F3C20;
+    --net-gray: #8CA0AF;
+    --line: rgba(242,245,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px;
+    background: var(--court-navy-deep);
+    color: var(--chalk);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--net-gray); text-transform: uppercase; letter-spacing: 0.05em; }
+  .warn {
+    background: rgba(193,80,43,0.15); border: 1px solid var(--clay-dim);
+    color: var(--chalk); padding: 10px 14px; border-radius: 8px;
+    font-size: 12.5px; margin: 12px 0 20px; line-height: 1.5;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  button {
+    font-family: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 6px; border: 1px solid var(--line);
+    background: var(--court-navy); color: var(--chalk);
+    padding: 8px 14px; margin: 0 8px 8px 0;
+  }
+  button.primary { background: var(--ball-yellow); color: var(--court-navy-deep); border: none; font-weight: 600; }
+  button.danger { color: var(--clay); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { color: var(--net-gray); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  input[type="text"], input[type="number"], select {
+    background: var(--court-navy); color: var(--chalk); border: 1px solid var(--line);
+    border-radius: 4px; padding: 4px 6px; font-family: inherit; font-size: 12.5px; width: 100%;
+  }
+  input[type="number"] { width: 56px; }
+  input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+  .name-cell { font-weight: 600; min-width: 110px; }
+  .day-line { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .day-line:last-child { border-bottom: none; }
+  .tag { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; }
+  .tag-closed { background: rgba(193,80,43,0.25); color: var(--clay); }
+  .tag-short { background: rgba(140,160,175,0.2); color: var(--net-gray); }
+  .tag-actual { background: rgba(215,242,60,0.18); color: var(--ball-yellow-dim); }
+  .gate { max-width: 360px; margin: 80px auto; text-align: center; }
+  .status { font-size: 12px; color: var(--net-gray); margin-top: 6px; }
+  .alt { color: var(--net-gray); }
+  .flex-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<div id="gateScreen" class="gate" style="display:none;">
+  <h1>What If — sandbox</h1>
+  <p class="status">Admin-only tool. Enter your admin key to continue.</p>
+  <input type="text" id="gateKeyInput" placeholder="Admin key" style="margin-bottom:10px;">
+  <br>
+  <button class="primary" id="gateSubmitBtn">Enter</button>
+</div>
+
+<div id="mainScreen" style="display:none; max-width: 900px; margin: 0 auto;">
+  <h1>What If — sandbox</h1>
+  <div class="warn">
+    🧪 This page isn't linked from anywhere and never touches production. "Copy current availability" only <em>reads</em> this week's data — nothing here is ever saved, no one's real availability changes, and no push notifications are ever sent, no matter what you edit below. Refreshing or closing this tab discards everything.
+  </div>
+
+  <div class="card">
+    <div class="flex-row">
+      <button class="primary" id="copyBtn">📋 Copy current availability</button>
+      <button id="resetBtn" disabled>↺ Reset to last copy</button>
+      <button id="addPlayerBtn">+ Add hypothetical player</button>
+      <span style="margin-left:auto;">
+        Rotation mode:
+        <select id="modeSelect" style="width:auto; display:inline-block;">
+          <option value="balanced">Balanced</option>
+          <option value="classic">Classic</option>
+        </select>
+      </span>
+    </div>
+    <div class="status" id="copyStatus">Not copied yet — click "Copy current availability" to pull this week's real data as a starting point, or just add hypothetical players from scratch.</div>
+  </div>
+
+  <div class="card">
+    <h2>Availability (edit freely)</h2>
+    <div style="overflow-x:auto;">
+      <table id="playersTable">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
+            <th>Out</th><th>Sub</th><th>Max/wk</th><th>Max streak</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="playersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Courts closed</h2>
+    <div class="flex-row" id="closedDaysRow"></div>
+  </div>
+
+  <div class="card">
+    <h2>Resulting schedule</h2>
+    <div id="scheduleOutput"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const API_URL = '/api/availability';
+  const ADMIN_KEY_STORAGE = 'tennisAdminKeyStored';
+
+  // ---- Gate (client-side only — this page never calls a write action, so
+  // there's nothing for a real key to protect beyond "don't stumble in here
+  // by accident"; the actual protection is that the URL isn't linked
+  // anywhere) ----
+  let adminKey = null;
+  try { adminKey = localStorage.getItem(ADMIN_KEY_STORAGE); } catch (e) { /* ignore */ }
+  const urlKey = new URLSearchParams(window.location.search).get('admin');
+  if (urlKey) adminKey = urlKey;
+
+  function showMain() {
+    document.getElementById('gateScreen').style.display = 'none';
+    document.getElementById('mainScreen').style.display = 'block';
+    init();
+  }
+
+  if (adminKey) {
+    showMain();
+  } else {
+    document.getElementById('gateScreen').style.display = 'block';
+    document.getElementById('gateSubmitBtn').addEventListener('click', () => {
+      const val = document.getElementById('gateKeyInput').value.trim();
+      if (!val) return;
+      adminKey = val;
+      try { localStorage.setItem(ADMIN_KEY_STORAGE, val); } catch (e) { /* ignore */ }
+      showMain();
+    });
+  }
+
+  function init() {
+    // ---- Week math (matches index.html's getWeekStart: schedule opens
+    // each Saturday for the upcoming Monday–Friday) ----
+    function getWeekStart() {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const daysSinceSaturday = (today.getDay() + 1) % 7;
+      const start = new Date(today);
+      start.setDate(today.getDate() - daysSinceSaturday);
+      return start;
+    }
+    function isoDate(d) { return d.toISOString().slice(0,10); }
+    const weekStart = getWeekStart();
+    const weekKey = isoDate(weekStart);
+    const weekDays = [];
+    for (let i = 2; i <= 6; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      weekDays.push(d);
+    }
+
+    // Same seeded-shuffle tiebreak as production, so a sandbox tie resolves
+    // identically to how it would in production for the same real week.
+    function hashString(str) {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+      return h >>> 0;
+    }
+    function mulberry32(seed) {
+      return function() {
+        seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function seededShuffle(arr, seed) {
+      const a = [...arr];
+      const rand = mulberry32(seed);
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    const weekSeed = hashString(weekKey);
+
+    function getStartTime(plan) {
+      const hasIgal = plan.playing.some(r => r.name === 'Igal');
+      const [h, m] = hasIgal ? [6, 15] : [6, 30];
+      return `${h}:${String(m).padStart(2, '0')}am`;
+    }
+
+    // ---------------------------------------------------------------------
+    // assignFairly — kept as a faithful line-for-line port of the same
+    // function in index.html (also duplicated in stats.html). If the real
+    // algorithm changes, this needs to be updated to match, same as
+    // stats.html's copy. This one takes closedDays/actualResults/players as
+    // explicit arguments instead of closing over page-level state, since
+    // this page's whole point is letting those vary from production.
+    // ---------------------------------------------------------------------
+    function assignFairly(responses, mode, closedDays, actualResults, tieRank) {
+      const playCount = {};
+      const currentStreak = {};
+      const lastPlayedIdx = {};
+      responses.forEach(r => {
+        playCount[r.name] = 0;
+        currentStreak[r.name] = 0;
+        lastPlayedIdx[r.name] = -99;
+      });
+      const byName = {};
+      responses.forEach(r => { byName[r.name] = r; });
+
+      return weekDays.map((d, idx) => {
+        if (closedDays.includes(idx)) {
+          return { idx, closed: true, isActual: false, available: [], playing: [], alternates: [], cappedOut: [], eligibleCount: null, explain: [] };
+        }
+
+        const available = responses.filter(r => r.days.includes(idx));
+        const actualNames = actualResults[String(idx)];
+
+        const wouldExceedReason = (r) => {
+          const streakCap = r.maxstreak;
+          const streakIfPlayed = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+          if (!!streakCap && streakIfPlayed > streakCap) return 'streak';
+          const weeklyCap = r.maxweekly;
+          if (!!weeklyCap && playCount[r.name] >= weeklyCap) return 'weekly';
+          return null;
+        };
+        const scarcityFor = (r) => {
+          if (mode === 'classic') return r.days.length;
+          const remainingDays = r.days.filter(dd => dd >= idx).length;
+          const remainingCapacity = r.maxweekly ? Math.max(0, r.maxweekly - playCount[r.name]) : Infinity;
+          const slack = remainingCapacity === Infinity ? remainingDays : Math.max(0, remainingDays - remainingCapacity);
+          return Math.min(slack, 3);
+        };
+
+        let playing;
+        let isActual = false;
+        let cappedOut = [];
+        let eligibleCount = null;
+
+        if (actualNames) {
+          isActual = true;
+          playing = actualNames.map(n => byName[n]).filter(Boolean);
+        } else if (available.length < 4) {
+          playing = [];
+        } else {
+          const wouldExceed = (r) => wouldExceedReason(r) !== null;
+          const eligible = available.filter(r => !wouldExceed(r));
+          cappedOut = available.filter(r => wouldExceed(r));
+
+          const byFairness = (a, b) => {
+            const diff = playCount[a.name] - playCount[b.name];
+            if (diff !== 0) return diff;
+            const availDiff = scarcityFor(a) - scarcityFor(b);
+            if (availDiff !== 0) return availDiff;
+            return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
+          };
+
+          const provisionalCore = [...eligible.filter(r => !r.isSub)].sort(byFairness).slice(0, 4);
+          let provisionalPlaying = provisionalCore;
+          if (provisionalPlaying.length < 4) {
+            const need = 4 - provisionalPlaying.length;
+            const sortedSubs = [...eligible.filter(r => r.isSub)].sort(byFairness);
+            provisionalPlaying = provisionalPlaying.concat(sortedSubs.slice(0, need));
+          }
+          playing = provisionalPlaying.length >= 4 ? provisionalPlaying : [];
+          eligibleCount = eligible.length;
+        }
+
+        const alternates = available.filter(r => !playing.includes(r));
+
+        responses.forEach(r => {
+          if (playing.includes(r)) {
+            currentStreak[r.name] = lastPlayedIdx[r.name] === idx - 1 ? currentStreak[r.name] + 1 : 1;
+            lastPlayedIdx[r.name] = idx;
+            playCount[r.name]++;
+          }
+        });
+
+        return { idx, closed: false, isActual, available, playing, alternates, cappedOut, eligibleCount };
+      });
+    }
+    // ---------------------------------------------------------------------
+
+    // ---- Sandbox state (pure in-memory, never sent anywhere) ----
+    let players = []; // { name, days:[0..4], out, isSub, maxstreak, maxweekly, isAdHoc }
+    let closedDays = [];
+    let actualResults = {};
+    let lastCopy = null;
+    let adHocCounter = 1;
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function copyFromProduction() {
+      const statusEl = document.getElementById('copyStatus');
+      statusEl.textContent = 'Copying...';
+      try {
+        const [listRes, modeRes] = await Promise.all([
+          fetch(`${API_URL}?${new URLSearchParams({ action: 'list', week: weekKey })}`),
+          fetch(`${API_URL}?${new URLSearchParams({ action: 'getRotationMode' })}`)
+        ]);
+        const listData = await listRes.json();
+        const modeData = await modeRes.json();
+        players = (listData.responses || []).map(r => ({
+          name: r.name,
+          days: Array.isArray(r.days) ? [...r.days] : [],
+          out: !!r.out,
+          isSub: !!r.isSub,
+          maxstreak: r.maxstreak ?? null,
+          maxweekly: r.maxweekly ?? null,
+          isAdHoc: false
+        }));
+        // Include anyone on the roster who hasn't responded yet, so the
+        // sandbox reflects "what if they became available" without having
+        // to manually re-add them.
+        (listData.players || []).forEach(name => {
+          if (!players.some(p => p.name === name)) {
+            players.push({ name, days: [], out: false, isSub: false, maxstreak: null, maxweekly: null, isAdHoc: false });
+          }
+        });
+        closedDays = [...(listData.closedDays || [])];
+        actualResults = JSON.parse(JSON.stringify(listData.actualResults || {}));
+        document.getElementById('modeSelect').value = (modeData.config && modeData.config.mode) || 'balanced';
+        lastCopy = { players: JSON.parse(JSON.stringify(players)), closedDays: [...closedDays], actualResults: JSON.parse(JSON.stringify(actualResults)) };
+        document.getElementById('resetBtn').disabled = false;
+        statusEl.textContent = `Copied ${players.length} player(s) from the live ${weekKey} week. Edit anything below — this copy is now yours to mess with.`;
+        render();
+      } catch (e) {
+        statusEl.textContent = 'Copy failed: ' + e.message;
+      }
+    }
+
+    function resetToLastCopy() {
+      if (!lastCopy) return;
+      players = JSON.parse(JSON.stringify(lastCopy.players));
+      closedDays = [...lastCopy.closedDays];
+      actualResults = JSON.parse(JSON.stringify(lastCopy.actualResults));
+      document.getElementById('copyStatus').textContent = 'Reset to the last copy from production.';
+      render();
+    }
+
+    function addHypotheticalPlayer() {
+      const name = `New Player ${adHocCounter++}`;
+      players.push({ name, days: [], out: false, isSub: false, maxstreak: null, maxweekly: null, isAdHoc: true });
+      render();
+    }
+
+    function renderPlayersTable() {
+      const tbody = document.getElementById('playersBody');
+      tbody.innerHTML = players.map((p, pi) => {
+        const dayBoxes = DOW_LABELS.map((_, di) => `
+          <td><input type="checkbox" data-pi="${pi}" data-day="${di}" class="day-check" ${p.days.includes(di) ? 'checked' : ''} ${p.out ? 'disabled' : ''}></td>
+        `).join('');
+        const nameCell = p.isAdHoc
+          ? `<input type="text" data-pi="${pi}" class="name-input" value="${escapeHtml(p.name)}">`
+          : `<span title="From production roster">${escapeHtml(p.name)}</span>`;
+        return `<tr>
+          <td class="name-cell">${nameCell}</td>
+          ${dayBoxes}
+          <td><input type="checkbox" data-pi="${pi}" class="out-check" ${p.out ? 'checked' : ''}></td>
+          <td><input type="checkbox" data-pi="${pi}" class="sub-check" ${p.isSub ? 'checked' : ''}></td>
+          <td><input type="number" min="0" data-pi="${pi}" class="maxweekly-input" value="${p.maxweekly ?? ''}" placeholder="—"></td>
+          <td><input type="number" min="0" data-pi="${pi}" class="maxstreak-input" value="${p.maxstreak ?? ''}" placeholder="—"></td>
+          <td>${p.isAdHoc ? `<button type="button" class="danger remove-btn" data-pi="${pi}">Remove</button>` : ''}</td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.day-check').forEach(el => el.addEventListener('change', () => {
+        const pi = Number(el.dataset.pi), di = Number(el.dataset.day);
+        const p = players[pi];
+        if (el.checked) { if (!p.days.includes(di)) p.days.push(di); }
+        else { p.days = p.days.filter(d => d !== di); }
+        renderSchedule();
+      }));
+      tbody.querySelectorAll('.out-check').forEach(el => el.addEventListener('change', () => {
+        players[Number(el.dataset.pi)].out = el.checked;
+        render();
+      }));
+      tbody.querySelectorAll('.sub-check').forEach(el => el.addEventListener('change', () => {
+        players[Number(el.dataset.pi)].isSub = el.checked;
+        renderSchedule();
+      }));
+      tbody.querySelectorAll('.maxweekly-input').forEach(el => el.addEventListener('input', () => {
+        const v = el.value.trim();
+        players[Number(el.dataset.pi)].maxweekly = v ? Number(v) : null;
+        renderSchedule();
+      }));
+      tbody.querySelectorAll('.maxstreak-input').forEach(el => el.addEventListener('input', () => {
+        const v = el.value.trim();
+        players[Number(el.dataset.pi)].maxstreak = v ? Number(v) : null;
+        renderSchedule();
+      }));
+      tbody.querySelectorAll('.name-input').forEach(el => el.addEventListener('input', () => {
+        players[Number(el.dataset.pi)].name = el.value.trim() || `New Player ${Number(el.dataset.pi) + 1}`;
+        renderSchedule();
+      }));
+      tbody.querySelectorAll('.remove-btn').forEach(el => el.addEventListener('click', () => {
+        players.splice(Number(el.dataset.pi), 1);
+        render();
+      }));
+    }
+
+    function renderClosedDays() {
+      const row = document.getElementById('closedDaysRow');
+      row.innerHTML = DOW_LABELS.map((label, di) => `
+        <label style="display:flex; align-items:center; gap:5px;">
+          <input type="checkbox" class="closed-check" data-day="${di}" ${closedDays.includes(di) ? 'checked' : ''}> ${label}
+        </label>
+      `).join('');
+      row.querySelectorAll('.closed-check').forEach(el => el.addEventListener('change', () => {
+        const di = Number(el.dataset.day);
+        if (el.checked) { if (!closedDays.includes(di)) closedDays.push(di); }
+        else { closedDays = closedDays.filter(d => d !== di); }
+        renderSchedule();
+      }));
+    }
+
+    function renderSchedule() {
+      const mode = document.getElementById('modeSelect').value;
+      const responses = players.filter(p => !p.out).map(p => ({
+        name: p.name, days: p.days, isSub: p.isSub, maxstreak: p.maxstreak, maxweekly: p.maxweekly
+      }));
+      const shuffledOrder = seededShuffle(players.map(p => p.name), weekSeed);
+      const tieRank = {};
+      shuffledOrder.forEach((name, i) => { tieRank[name] = i; });
+
+      const dayPlans = assignFairly(responses, mode, closedDays, actualResults, tieRank);
+      const out = document.getElementById('scheduleOutput');
+      out.innerHTML = dayPlans.map(plan => {
+        const d = weekDays[plan.idx];
+        const dateLabel = `${DOW_LABELS[plan.idx]} ${d.getMonth()+1}/${d.getDate()}`;
+        if (plan.closed) {
+          return `<div class="day-line"><strong>${dateLabel}</strong><span class="tag tag-closed">closed</span></div>`;
+        }
+        if (plan.playing.length >= 4) {
+          const startLabel = getStartTime(plan);
+          const names = plan.playing.map(r => escapeHtml(r.name)).join(', ');
+          const altNote = plan.alternates.length > 0 ? ` <span class="alt">(sitting out: ${plan.alternates.map(r => escapeHtml(r.name)).join(', ')})</span>` : '';
+          const actualTag = plan.isActual ? `<span class="tag tag-actual">already played</span>` : '';
+          return `<div class="day-line"><strong>${dateLabel} (${startLabel}–7:45am):</strong> ${names}${altNote} ${actualTag}</div>`;
+        }
+        if (plan.available.length === 0) {
+          return `<div class="day-line">${dateLabel}: <span class="alt">no one available</span></div>`;
+        }
+        if (plan.cappedOut.length > 0) {
+          return `<div class="day-line">${dateLabel}: ${plan.available.length} available, but ${plan.cappedOut.map(r => escapeHtml(r.name)).join(', ')} at limit — only ${plan.eligibleCount ?? 0} eligible <span class="tag tag-short">short-staffed</span></div>`;
+        }
+        return `<div class="day-line">${dateLabel}: only ${plan.available.length} available (need 4) — ${plan.available.map(r => escapeHtml(r.name)).join(', ')} <span class="tag tag-short">short-staffed</span></div>`;
+      }).join('');
+    }
+
+    function render() {
+      renderPlayersTable();
+      renderClosedDays();
+      renderSchedule();
+    }
+
+    document.getElementById('copyBtn').addEventListener('click', copyFromProduction);
+    document.getElementById('resetBtn').addEventListener('click', resetToLastCopy);
+    document.getElementById('addPlayerBtn').addEventListener('click', addHypotheticalPlayer);
+    document.getElementById('modeSelect').addEventListener('change', renderSchedule);
+
+    render();
+  }
+})();
+</script>
+</body>
+</html>
