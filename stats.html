@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v2.2</div>
+  <div class="version-tag">v2.3</div>
 </div>
 
 <div class="wrap">
@@ -268,6 +268,9 @@
         const byFairness = (a, b) => {
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
+          const prefRank = (r) => (r.preferredDay === null || r.preferredDay === undefined) ? 1 : (r.preferredDay === idx ? 0 : 2);
+          const prefDiff = prefRank(a) - prefRank(b);
+          if (prefDiff !== 0) return prefDiff;
           // Mirrors index.html's scarcityFor: weekly-cap-aware slack,
           // thresholded at 3, "classic" mode left as literal original.
           const scarcityFor = (r) => {

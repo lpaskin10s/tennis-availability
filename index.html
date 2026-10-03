@@ -540,7 +540,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.15</div>
+  <div class="version-tag">v4.16</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -557,6 +557,10 @@
 
     <label class="field-label">Days you can play this week</label>
     <div class="day-grid" id="dayGrid"></div>
+    <div id="prefDayWrap" style="display:none;">
+      <label class="field-label" for="prefDaySelect">Preferred day (optional)</label>
+      <select id="prefDaySelect"></select>
+    </div>
     <button type="button" class="out-toggle" id="outToggle">I'm out this week</button>
 
     <label class="field-label" for="noteInput">Notes (optional)</label>
@@ -838,6 +842,23 @@
     dayChips.push(chip);
   });
 
+  let preferredDay = null;
+  function updatePrefUI() {
+    const wrap = document.getElementById('prefDayWrap');
+    const sel = document.getElementById('prefDaySelect');
+    if (!wrap || !sel) return;
+    const days = Array.from(selected).sort((a, b) => a - b);
+    if (isOut || days.length < 2) { preferredDay = null; wrap.style.display = 'none'; return; }
+    if (preferredDay !== null && !selected.has(preferredDay)) preferredDay = null;
+    sel.innerHTML = '<option value="">No preference</option>' + days.map(i =>
+      `<option value="${i}">${DOW[weekDays[i].getDay()]} ${weekDays[i].getMonth()+1}/${weekDays[i].getDate()}</option>`).join('');
+    sel.value = preferredDay === null ? '' : String(preferredDay);
+    wrap.style.display = 'block';
+  }
+  document.getElementById('prefDaySelect').addEventListener('change', (e) => {
+    preferredDay = e.target.value === '' ? null : Number(e.target.value);
+  });
+
   function toggleDay(idx, chip) {
     if (isOut || closedDays.includes(idx)) return;
     if (selected.has(idx)) {
@@ -849,6 +870,7 @@
       chip.classList.add('selected');
       chip.setAttribute('aria-checked', 'true');
     }
+    updatePrefUI();
   }
 
   function applyClosedDaysToPicker() {
@@ -878,6 +900,7 @@
     maxStreakInput.disabled = isOut;
     maxWeeklyInput.disabled = isOut;
     if (isOut) { maxStreakInput.value = ''; maxWeeklyInput.value = ''; }
+    updatePrefUI();
     dayChips.forEach((chip, idx) => {
       chip.classList.toggle('disabled', isOut);
       if (isOut) {
@@ -902,6 +925,7 @@
     noteInput.value = '';
     maxStreakInput.value = '';
     maxWeeklyInput.value = '';
+    preferredDay = null;
     setOutState(false);
 
     const existing = lastResponses.find(r => r.name === name);
@@ -920,6 +944,8 @@
     noteInput.value = existing.note || '';
     maxStreakInput.value = existing.maxstreak || '';
     maxWeeklyInput.value = existing.maxweekly || '';
+    preferredDay = (existing.preferredDay ?? null);
+    updatePrefUI();
   }
 
   const subNameInput = document.getElementById('subNameInput');
@@ -963,6 +989,7 @@
       noteInput.value = '';
       maxStreakInput.value = '';
       maxWeeklyInput.value = '';
+      preferredDay = null;
       setOutState(false);
       document.getElementById('personalSnapshotSlot').innerHTML = '';
     } else {
@@ -981,7 +1008,7 @@
     weekDays.map(d => `<th>${DOW[d.getDay()]}<br>${d.getMonth()+1}/${d.getDate()}</th>`).join('') +
     '<th>Notes</th>';
 
-  async function saveResponse(name, days, note, out, maxStreak, maxWeekly, isSub) {
+  async function saveResponse(name, days, note, out, maxStreak, maxWeekly, isSub, pref) {
     const params = new URLSearchParams({
       action: 'save',
       week: weekKey,
@@ -991,7 +1018,8 @@
       out: out ? 'true' : 'false',
       maxstreak: maxStreak ? String(maxStreak) : '',
       maxweekly: maxWeekly ? String(maxWeekly) : '',
-      sub: isSub ? 'true' : 'false'
+      sub: isSub ? 'true' : 'false',
+      pref: (!out && pref !== null && pref !== undefined) ? String(pref) : ''
     });
     let res, text;
     try {
@@ -1293,6 +1321,12 @@
           // Primary: fewer games played so far this week gets priority.
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
+          // Preferred day: among equally-played people, whoever prefers THIS
+          // day goes first, then people with no preference, then people who
+          // prefer a different day. Never overrides caps or games played.
+          const prefRank = (r) => (r.preferredDay === null || r.preferredDay === undefined) ? 1 : (r.preferredDay === idx ? 0 : 2);
+          const prefDiff = prefRank(a) - prefRank(b);
+          if (prefDiff !== 0) return prefDiff;
           // Secondary: among people tied on games played, whoever has FEWER
           // REMAINING available days (today onward) gets priority — someone
           // whose only shot this week is today has no other chance if
@@ -1925,7 +1959,7 @@
     statusMsg.textContent = 'Saving...';
     statusMsg.style.color = 'var(--net-gray)';
     try {
-      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value, isSub);
+      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value, isSub, preferredDay);
       if (!isNewSubEntry) {
         try { localStorage.setItem(LAST_NAME_KEY, name); } catch (e) { /* ignore */ }
       } else {

@@ -276,6 +276,9 @@
           const byFairness = (a, b) => {
             const diff = playCount[a.name] - playCount[b.name];
             if (diff !== 0) return diff;
+            const prefRank = (r) => (r.preferredDay === null || r.preferredDay === undefined) ? 1 : (r.preferredDay === idx ? 0 : 2);
+            const prefDiff = prefRank(a) - prefRank(b);
+            if (prefDiff !== 0) return prefDiff;
             const availDiff = scarcityFor(a) - scarcityFor(b);
             if (availDiff !== 0) return availDiff;
             return (tieRank[a.name] ?? 99) - (tieRank[b.name] ?? 99);
@@ -335,6 +338,7 @@
           isSub: !!r.isSub,
           maxstreak: r.maxstreak ?? null,
           maxweekly: r.maxweekly ?? null,
+          preferredDay: r.preferredDay ?? null,
           isAdHoc: false
         }));
         // Include anyone on the roster who hasn't responded yet, so the
@@ -445,7 +449,7 @@
     function renderSchedule() {
       const mode = document.getElementById('modeSelect').value;
       const responses = players.filter(p => !p.out).map(p => ({
-        name: p.name, days: p.days, isSub: p.isSub, maxstreak: p.maxstreak, maxweekly: p.maxweekly
+        name: p.name, days: p.days, isSub: p.isSub, maxstreak: p.maxstreak, maxweekly: p.maxweekly, preferredDay: p.preferredDay ?? null
       }));
       const shuffledOrder = seededShuffle(players.map(p => p.name), weekSeed);
       const tieRank = {};
