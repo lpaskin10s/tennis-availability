@@ -76,7 +76,7 @@ function isIdenticalResponse(previous, value) {
     (previous.note || '') === (value.note || '') &&
     (previous.maxstreak ?? null) === value.maxstreak &&
     (previous.maxweekly ?? null) === value.maxweekly &&
-    (previous.preferredDay ?? null) === (value.preferredDay ?? null)
+    JSON.stringify([...(previous.preferredDays || [])].sort()) === JSON.stringify([...(value.preferredDays || [])].sort())
   );
 }
 
@@ -148,7 +148,7 @@ export default async (req, context) => {
     const maxstreak = url.searchParams.get("maxstreak");
     const maxweekly = url.searchParams.get("maxweekly");
     const isSub = url.searchParams.get("sub") === "true";
-    const prefParam = url.searchParams.get("pref");
+    const prefParam = url.searchParams.get("prefs") || "";
     const respKey = `resp:${week}:${slug(name)}`;
     const previous = await store.get(respKey, { type: "json" });
     const value = {
@@ -159,12 +159,15 @@ export default async (req, context) => {
       maxstreak: maxstreak ? Number(maxstreak) : null,
       maxweekly: maxweekly ? Number(maxweekly) : null,
       isSub,
-      preferredDay: null,
+      preferredDays: [],
       ts: Date.now()
     };
-    // Preferred day only counts with 2+ days picked and the pick among them.
-    if (prefParam !== null && prefParam !== "" && !out && value.days.length >= 2 && value.days.includes(Number(prefParam))) {
-      value.preferredDay = Number(prefParam);
+    // Starred (preferred) days: must be among the picked days, and starring
+    // every picked day is the same as no preference, so it's stored as none.
+    if (!out && prefParam) {
+      const stars = [...new Set(prefParam.split(",").filter(Boolean).map(Number))]
+        .filter(d => value.days.includes(d)).sort();
+      if (stars.length > 0 && stars.length < value.days.length) value.preferredDays = stars;
     }
     await store.setJSON(respKey, value);
 
