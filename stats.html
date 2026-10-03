@@ -268,7 +268,7 @@
         const byFairness = (a, b) => {
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
-          const prefRank = (r) => (r.preferredDay === null || r.preferredDay === undefined) ? 1 : (r.preferredDay === idx ? 0 : 2);
+          const prefRank = (r) => { const st = r.preferredDays || []; return st.length === 0 ? 1 : (st.includes(idx) ? 0 : 2); };
           const prefDiff = prefRank(a) - prefRank(b);
           if (prefDiff !== 0) return prefDiff;
           // Mirrors index.html's scarcityFor: weekly-cap-aware slack,

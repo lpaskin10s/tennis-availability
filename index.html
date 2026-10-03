@@ -223,6 +223,13 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  .star-btn {
+    background: none; border: 1px dashed var(--line); border-radius: 10px;
+    color: var(--net-gray); font-size: 20px; line-height: 1; padding: 6px 0;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .star-btn.on { color: var(--ball-yellow); border-style: solid; border-color: var(--ball-yellow-dim); }
+  .star-btn.off-day { visibility: hidden; }
   .day-chip:hover { border-color: var(--ball-yellow-dim); }
 
   .day-chip .dow {
@@ -558,8 +565,9 @@
     <label class="field-label">Days you can play this week</label>
     <div class="day-grid" id="dayGrid"></div>
     <div id="prefDayWrap" style="display:none;">
-      <label class="field-label" for="prefDaySelect">Preferred day (optional)</label>
-      <select id="prefDaySelect"></select>
+      <label class="field-label">Tap ★ under the days you'd prefer (optional)</label>
+      <div class="day-grid star-grid" id="starGrid" style="margin-bottom:6px;"></div>
+      <div class="field-hint" style="font-size:11px;color:var(--net-gray);margin-bottom:14px;">Only a nudge — your max-days and in-a-row limits and fair rotation still come first.</div>
     </div>
     <button type="button" class="out-toggle" id="outToggle">I'm out this week</button>
 
@@ -842,22 +850,37 @@
     dayChips.push(chip);
   });
 
-  let preferredDay = null;
+  const preferredDays = new Set();
+  const starGrid = document.getElementById('starGrid');
+  const starBtns = weekDays.map((d, idx) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'star-btn off-day';
+    b.textContent = '☆';
+    b.setAttribute('aria-label', `Prefer ${DOW[d.getDay()]}`);
+    b.addEventListener('click', () => {
+      if (!selected.has(idx)) return;
+      if (preferredDays.has(idx)) preferredDays.delete(idx); else preferredDays.add(idx);
+      updatePrefUI();
+    });
+    starGrid.appendChild(b);
+    return b;
+  });
   function updatePrefUI() {
     const wrap = document.getElementById('prefDayWrap');
-    const sel = document.getElementById('prefDaySelect');
-    if (!wrap || !sel) return;
-    const days = Array.from(selected).sort((a, b) => a - b);
-    if (isOut || days.length < 2) { preferredDay = null; wrap.style.display = 'none'; return; }
-    if (preferredDay !== null && !selected.has(preferredDay)) preferredDay = null;
-    sel.innerHTML = '<option value="">No preference</option>' + days.map(i =>
-      `<option value="${i}">${DOW[weekDays[i].getDay()]} ${weekDays[i].getMonth()+1}/${weekDays[i].getDate()}</option>`).join('');
-    sel.value = preferredDay === null ? '' : String(preferredDay);
+    if (!wrap) return;
+    const count = selected.size;
+    [...preferredDays].forEach(i => { if (!selected.has(i)) preferredDays.delete(i); });
+    if (isOut || count < 2) { preferredDays.clear(); wrap.style.display = 'none'; return; }
+    starBtns.forEach((b, idx) => {
+      const on = preferredDays.has(idx);
+      b.classList.toggle('off-day', !selected.has(idx));
+      b.classList.toggle('on', on);
+      b.textContent = on ? '★' : '☆';
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     wrap.style.display = 'block';
   }
-  document.getElementById('prefDaySelect').addEventListener('change', (e) => {
-    preferredDay = e.target.value === '' ? null : Number(e.target.value);
-  });
 
   function toggleDay(idx, chip) {
     if (isOut || closedDays.includes(idx)) return;
@@ -925,7 +948,7 @@
     noteInput.value = '';
     maxStreakInput.value = '';
     maxWeeklyInput.value = '';
-    preferredDay = null;
+    preferredDays.clear();
     setOutState(false);
 
     const existing = lastResponses.find(r => r.name === name);
@@ -944,7 +967,8 @@
     noteInput.value = existing.note || '';
     maxStreakInput.value = existing.maxstreak || '';
     maxWeeklyInput.value = existing.maxweekly || '';
-    preferredDay = (existing.preferredDay ?? null);
+    preferredDays.clear();
+    (existing.preferredDays || []).forEach(d => { if (selected.has(d)) preferredDays.add(d); });
     updatePrefUI();
   }
 
@@ -989,7 +1013,7 @@
       noteInput.value = '';
       maxStreakInput.value = '';
       maxWeeklyInput.value = '';
-      preferredDay = null;
+      preferredDays.clear();
       setOutState(false);
       document.getElementById('personalSnapshotSlot').innerHTML = '';
     } else {
@@ -1008,7 +1032,7 @@
     weekDays.map(d => `<th>${DOW[d.getDay()]}<br>${d.getMonth()+1}/${d.getDate()}</th>`).join('') +
     '<th>Notes</th>';
 
-  async function saveResponse(name, days, note, out, maxStreak, maxWeekly, isSub, pref) {
+  async function saveResponse(name, days, note, out, maxStreak, maxWeekly, isSub, prefs) {
     const params = new URLSearchParams({
       action: 'save',
       week: weekKey,
@@ -1019,7 +1043,7 @@
       maxstreak: maxStreak ? String(maxStreak) : '',
       maxweekly: maxWeekly ? String(maxWeekly) : '',
       sub: isSub ? 'true' : 'false',
-      pref: (!out && pref !== null && pref !== undefined) ? String(pref) : ''
+      prefs: (!out && prefs) ? Array.from(prefs).join(',') : ''
     });
     let res, text;
     try {
@@ -1321,10 +1345,15 @@
           // Primary: fewer games played so far this week gets priority.
           const diff = playCount[a.name] - playCount[b.name];
           if (diff !== 0) return diff;
-          // Preferred day: among equally-played people, whoever prefers THIS
-          // day goes first, then people with no preference, then people who
-          // prefer a different day. Never overrides caps or games played.
-          const prefRank = (r) => (r.preferredDay === null || r.preferredDay === undefined) ? 1 : (r.preferredDay === idx ? 0 : 2);
+          // Starred days: among equally-played people, whoever starred THIS
+          // day goes first, then people with no stars, then people who
+          // starred only other days. Starring every day counts as no stars
+          // (server-side). Never overrides caps or games played.
+          const prefRank = (r) => {
+            const st = r.preferredDays || [];
+            if (st.length === 0) return 1;
+            return st.includes(idx) ? 0 : 2;
+          };
           const prefDiff = prefRank(a) - prefRank(b);
           if (prefDiff !== 0) return prefDiff;
           // Secondary: among people tied on games played, whoever has FEWER
@@ -1959,7 +1988,7 @@
     statusMsg.textContent = 'Saving...';
     statusMsg.style.color = 'var(--net-gray)';
     try {
-      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value, isSub, preferredDay);
+      await saveResponse(name, selected, document.getElementById('noteInput').value, isOut, maxStreakInput.value, maxWeeklyInput.value, isSub, preferredDays);
       if (!isNewSubEntry) {
         try { localStorage.setItem(LAST_NAME_KEY, name); } catch (e) { /* ignore */ }
       } else {
