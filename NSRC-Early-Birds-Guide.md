@@ -29,7 +29,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 - Tap **"I'm out this week"** instead of leaving your days blank — it's clearer than an empty response, since it shows on the board as a distinct "OUT" tag next to your name rather than looking like you just haven't responded yet.
 
 ### Confirmed days are locked for late arrivals
-- Once a day's lineup is confirmed (4 players), that day shows **FULL** and can't be selected by anyone who hasn't responded yet this week. Anyone who has already responded can still edit their own entry, and the admin can open a day back up (see the admin section).
+- Once the admin has marked a day as confirmed (recording its lineup), that day shows **FULL** and can't be selected by anyone who hasn't responded yet this week. Anyone who has already responded can still edit their own entry, and the admin can open a day back up (see the admin section).
 
 ### Reading the board
 - **Scoreboard table:** shows everyone's marked days at a glance.
@@ -133,7 +133,7 @@ This has to be done once per device/person — sharing the admin link with a co-
 - Select any day(s) the club itself is closed. That day is fully excluded from scheduling — no lineup gets built for it, and it doesn't count against anyone's weekly limit or streak.
 
 **Open confirmed days to late sign-ups**
-- Confirmed days are locked for people who haven't responded yet. Highlight a day here and save to unlock it for everyone this week; un-highlight and save to lock it again. Admin mode itself is never locked out, so you can always enter or edit anyone's response.
+- Days you've marked as confirmed are locked for people who haven't responded yet. A day that merely has 4+ people available is not locked. Highlight a day here and save to unlock it for everyone this week; un-highlight and save to lock it again. Admin mode itself is never locked out, so you can always enter or edit anyone's response.
 
 **Mark who actually played a day**
 - This is the important one: pick a day, check off who *really* played (which can differ from what the app projected — no-shows, subs, etc.), and save.

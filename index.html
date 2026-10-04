@@ -897,7 +897,8 @@
     updatePrefUI();
   }
 
-  // A day whose lineup is confirmed (4 playing) is locked for anyone who
+  // A day the admin has marked as confirmed (a recorded lineup via "Mark who
+  // actually played a day") is locked for anyone who
   // hasn't responded yet this week, so late arrivals can't crowd a set
   // lineup. Responders keep full control of their own entry; the admin
   // bypasses the lock and can also open a specific day back up for everyone.
@@ -906,7 +907,7 @@
     const name = nameSelect.value === '__sub__' ? subNameInput.value.trim() : nameSelect.value;
     if (name && lastResponses.some(r => r.name === name)) return false; // already responded
     const plan = lastDayPlans.find(p => p.idx === idx);
-    return !!(plan && !plan.closed && plan.playing.length >= 4);
+    return !!(plan && !plan.closed && plan.isActual && plan.playing.length >= 4);
   }
 
   function applyClosedDaysToPicker() {
