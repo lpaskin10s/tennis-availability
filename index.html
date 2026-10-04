@@ -899,13 +899,16 @@
 
   // A day the admin has marked as confirmed (a recorded lineup via "Mark who
   // actually played a day") is locked for anyone who
-  // hasn't responded yet this week, so late arrivals can't crowd a set
+  // didn't already have it in their saved response, so late arrivals can't crowd a set
   // lineup. Responders keep full control of their own entry; the admin
   // bypasses the lock and can also open a specific day back up for everyone.
   function lockedForCurrentUser(idx) {
     if (isAdmin || unblockedDays.includes(idx) || closedDays.includes(idx)) return false;
     const name = nameSelect.value === '__sub__' ? subNameInput.value.trim() : nameSelect.value;
-    if (name && lastResponses.some(r => r.name === name)) return false; // already responded
+    // Someone who already had this day in their saved response keeps it;
+    // everyone else (no response yet, or responded without this day) is locked out.
+    const mine = name ? lastResponses.find(r => r.name === name) : null;
+    if (mine && !mine.out && (mine.days || []).includes(idx)) return false;
     const plan = lastDayPlans.find(p => p.idx === idx);
     return !!(plan && !plan.closed && plan.isActual && plan.playing.length >= 4);
   }
