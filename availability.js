@@ -75,7 +75,8 @@ function isIdenticalResponse(previous, value) {
     !!previous.out === !!value.out &&
     (previous.note || '') === (value.note || '') &&
     (previous.maxstreak ?? null) === value.maxstreak &&
-    (previous.maxweekly ?? null) === value.maxweekly
+    (previous.maxweekly ?? null) === value.maxweekly &&
+    JSON.stringify([...(previous.preferredDays || [])].sort()) === JSON.stringify([...(value.preferredDays || [])].sort())
   );
 }
 
@@ -135,8 +136,9 @@ export default async (req, context) => {
     responses.sort((a, b) => a.name.localeCompare(b.name));
     const closedDays = (await store.get(`closed:${week}`, { type: "json" })) || [];
     const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
+    const unblockedDays = (await store.get(`unblocked:${week}`, { type: "json" })) || [];
     const players = await getPlayers(store);
-    return json({ responses, closedDays, actualResults, players });
+    return json({ responses, closedDays, actualResults, players, unblockedDays });
   }
 
   if (action === "save") {
@@ -147,6 +149,7 @@ export default async (req, context) => {
     const maxstreak = url.searchParams.get("maxstreak");
     const maxweekly = url.searchParams.get("maxweekly");
     const isSub = url.searchParams.get("sub") === "true";
+    const prefParam = url.searchParams.get("prefs") || "";
     const respKey = `resp:${week}:${slug(name)}`;
     const previous = await store.get(respKey, { type: "json" });
     const value = {
@@ -157,8 +160,16 @@ export default async (req, context) => {
       maxstreak: maxstreak ? Number(maxstreak) : null,
       maxweekly: maxweekly ? Number(maxweekly) : null,
       isSub,
+      preferredDays: [],
       ts: Date.now()
     };
+    // Starred (preferred) days: must be among the picked days, and starring
+    // every picked day is the same as no preference, so it's stored as none.
+    if (!out && prefParam) {
+      const stars = [...new Set(prefParam.split(",").filter(Boolean).map(Number))]
+        .filter(d => value.days.includes(d)).sort();
+      if (stars.length > 0 && stars.length < value.days.length) value.preferredDays = stars;
+    }
     await store.setJSON(respKey, value);
 
     if (!isIdenticalResponse(previous, value)) {
@@ -190,6 +201,15 @@ export default async (req, context) => {
     const closedParam = url.searchParams.get("closedDays") || "";
     const closedDays = closedParam ? closedParam.split(",").filter((x) => x !== "").map(Number) : [];
     await store.setJSON(`closed:${week}`, closedDays);
+    return json({ ok: true });
+  }
+
+  if (action === "setUnblocked") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const p = url.searchParams.get("unblockedDays") || "";
+    const days = p ? p.split(",").filter((x) => x !== "").map(Number) : [];
+    await store.setJSON(`unblocked:${week}`, days);
     return json({ ok: true });
   }
 

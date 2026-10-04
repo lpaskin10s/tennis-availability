@@ -136,8 +136,9 @@ export default async (req, context) => {
     responses.sort((a, b) => a.name.localeCompare(b.name));
     const closedDays = (await store.get(`closed:${week}`, { type: "json" })) || [];
     const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
+    const unblockedDays = (await store.get(`unblocked:${week}`, { type: "json" })) || [];
     const players = await getPlayers(store);
-    return json({ responses, closedDays, actualResults, players });
+    return json({ responses, closedDays, actualResults, players, unblockedDays });
   }
 
   if (action === "save") {
@@ -200,6 +201,15 @@ export default async (req, context) => {
     const closedParam = url.searchParams.get("closedDays") || "";
     const closedDays = closedParam ? closedParam.split(",").filter((x) => x !== "").map(Number) : [];
     await store.setJSON(`closed:${week}`, closedDays);
+    return json({ ok: true });
+  }
+
+  if (action === "setUnblocked") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const p = url.searchParams.get("unblockedDays") || "";
+    const days = p ? p.split(",").filter((x) => x !== "").map(Number) : [];
+    await store.setJSON(`unblocked:${week}`, days);
     return json({ ok: true });
   }
 

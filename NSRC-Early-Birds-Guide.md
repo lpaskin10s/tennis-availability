@@ -16,6 +16,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 
 ### Setting your availability
 - Tap the days you're free (Monday–Friday only — no weekend play).
+- Picked 2 or more days? A row of **☆ stars** appears under your selected days. Tap the star under any day(s) you'd prefer — one or several. It's only a nudge: your max-days and days-in-a-row limits, and the fairness rules below, always come first. Starring every day you picked is the same as starring none.
 - A new week opens up starting each **Saturday**, for the following Monday–Friday. The board automatically resets itself every Saturday — nobody has to do anything to "start" a new week.
 - **Notes (optional):** free text for anything not covered elsewhere — "only after 6pm," "can sub last minute," etc. This is just informational; nothing reads or acts on it automatically.
 
@@ -26,6 +27,9 @@ A quick reference for everyone in the group, plus a separate section for the adm
 
 ### If you're out for the week
 - Tap **"I'm out this week"** instead of leaving your days blank — it's clearer than an empty response, since it shows on the board as a distinct "OUT" tag next to your name rather than looking like you just haven't responded yet.
+
+### Confirmed days are locked for late arrivals
+- Once a day's lineup is confirmed (4 players), that day shows **FULL** and can't be selected by anyone who hasn't responded yet this week. Anyone who has already responded can still edit their own entry, and the admin can open a day back up (see the admin section).
 
 ### Reading the board
 - **Scoreboard table:** shows everyone's marked days at a glance.
@@ -47,6 +51,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 
 ### How fairness works (so "why did I get bumped?" makes sense)
 - If more than 4 people want to play a day, priority goes to whoever's played **fewer days so far that week**.
+- If that's tied, anyone who **starred this day** goes first, then people with no stars, then people who starred only other days.
 - If that's still tied, priority goes to whoever has **fewer remaining chances to play this week** — how that's measured depends on the admin's chosen rotation mode (see the admin section below), but the idea either way is the same: someone with limited options gets priority over someone who's still flexible, since the flexible player has other chances to get picked and the constrained player doesn't. In Balanced mode, this also accounts for your own "max games this week" setting if you use one — wanting fewer games isn't treated as being more flexible, and listing fewer real days than you actually have doesn't help once you're already reasonably flexible (3+ real spare days all count the same).
 - If it's still a genuine tie after that, the app uses a well-mixed, date-seeded shuffle to decide — not alphabetical, and not the same people favored every week.
 - Nothing carries over between weeks — every week starts even.
@@ -126,6 +131,9 @@ This has to be done once per device/person — sharing the admin link with a co-
 
 **Mark club-closed days**
 - Select any day(s) the club itself is closed. That day is fully excluded from scheduling — no lineup gets built for it, and it doesn't count against anyone's weekly limit or streak.
+
+**Open confirmed days to late sign-ups**
+- Confirmed days are locked for people who haven't responded yet. Highlight a day here and save to unlock it for everyone this week; un-highlight and save to lock it again. Admin mode itself is never locked out, so you can always enter or edit anyone's response.
 
 **Mark who actually played a day**
 - This is the important one: pick a day, check off who *really* played (which can differ from what the app projected — no-shows, subs, etc.), and save.

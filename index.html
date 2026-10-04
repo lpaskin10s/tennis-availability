@@ -813,6 +813,7 @@
   }
 
   let closedDays = [];
+  let unblockedDays = [];
   let actualResults = {};
   let lastDayPlans = [];
   let didInitialPopulate = false;
@@ -883,7 +884,7 @@
   }
 
   function toggleDay(idx, chip) {
-    if (isOut || closedDays.includes(idx)) return;
+    if (isOut || closedDays.includes(idx) || lockedForCurrentUser(idx)) return;
     if (selected.has(idx)) {
       selected.delete(idx);
       chip.classList.remove('selected');
@@ -896,18 +897,35 @@
     updatePrefUI();
   }
 
+  // A day whose lineup is confirmed (4 playing) is locked for anyone who
+  // hasn't responded yet this week, so late arrivals can't crowd a set
+  // lineup. Responders keep full control of their own entry; the admin
+  // bypasses the lock and can also open a specific day back up for everyone.
+  function lockedForCurrentUser(idx) {
+    if (isAdmin || unblockedDays.includes(idx) || closedDays.includes(idx)) return false;
+    const name = nameSelect.value === '__sub__' ? subNameInput.value.trim() : nameSelect.value;
+    if (name && lastResponses.some(r => r.name === name)) return false; // already responded
+    const plan = lastDayPlans.find(p => p.idx === idx);
+    return !!(plan && !plan.closed && plan.playing.length >= 4);
+  }
+
   function applyClosedDaysToPicker() {
     dayChips.forEach((chip, idx) => {
       const closed = closedDays.includes(idx);
-      chip.classList.toggle('closed-chip', closed);
-      if (closed) {
+      const locked = !closed && lockedForCurrentUser(idx);
+      chip.classList.toggle('closed-chip', closed || locked);
+      chip.title = locked ? "Lineup is set for this day. Ask Lewis if you'd like to be added." : '';
+      if (closed || locked) {
         selected.delete(idx);
+        preferredDays.delete(idx);
         chip.classList.remove('selected');
-        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">CLOSED</span>`;
+        chip.setAttribute('aria-checked', 'false');
+        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${closed ? 'CLOSED' : 'FULL'}</span>`;
       } else {
         chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${weekDays[idx].getDate()}</span>`;
       }
     });
+    updatePrefUI();
   }
 
   let isOut = false;
@@ -958,7 +976,7 @@
       setOutState(true);
     } else {
       existing.days.forEach(idx => {
-        if (closedDays.includes(idx) || !dayChips[idx]) return;
+        if (closedDays.includes(idx) || !dayChips[idx] || lockedForCurrentUser(idx)) return;
         selected.add(idx);
         dayChips[idx].classList.add('selected');
         dayChips[idx].setAttribute('aria-checked', 'true');
@@ -1023,6 +1041,7 @@
         renderPersonalSnapshot(nameSelect.value);
       }
     }
+    applyClosedDaysToPicker();
     if (lastResponses.length > 0 || closedDays.length > 0) renderBoard(lastResponses);
   });
 
@@ -1163,7 +1182,7 @@
       const res = await fetch(`${API_URL}?${params.toString()}`);
       if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [], actualResults: data.actualResults || {}, players: data.players || null, ok: true };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], unblockedDays: data.unblockedDays || [], actualResults: data.actualResults || {}, players: data.players || null, ok: true };
     } catch (e) {
       return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
     }
@@ -1178,6 +1197,13 @@
 
   async function saveClosedDays(days) {
     const params = new URLSearchParams({ action: 'setClosed', week: weekKey, key: adminKey, closedDays: days.join(',') });
+    const res = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  async function saveUnblockedDays(days) {
+    const params = new URLSearchParams({ action: 'setUnblocked', week: weekKey, key: adminKey, unblockedDays: days.join(',') });
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
@@ -1953,12 +1979,14 @@
       renderNameOptions();
     }
     closedDays = data.closedDays;
+    unblockedDays = data.unblockedDays || [];
     actualResults = data.actualResults;
     lastResponses = data.responses;
     renderNameOptions();
     applyClosedDaysToPicker();
     renderBoard(data.responses);
-    if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); }
+    applyClosedDaysToPicker(); // again: lineup (lastDayPlans) is only fresh after renderBoard
+    if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); renderAdminUnblockedPicker(); }
     if (tag) tag.textContent = `Updated ${timeLabel}`;
     if (!didInitialPopulate && nameSelect.value) {
       populateFormForName(nameSelect.value);
@@ -2077,6 +2105,11 @@
           <div class="day-grid" id="adminDayGrid"></div>
           <button class="primary admin-btn" id="saveClosedBtn">Save closed days</button>
           <div class="status-msg admin-status" id="adminStatusMsg"></div>
+
+          <label class="field-label" style="margin-top:22px;">Open confirmed days to late sign-ups <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(confirmed days are locked for anyone who hasn't responded — highlight a day to unlock it)</span></label>
+          <div class="day-grid" id="unblockDayGrid"></div>
+          <button class="primary admin-btn" id="saveUnblockBtn">Save late sign-up days</button>
+          <div class="status-msg admin-status" id="unblockStatusMsg"></div>
 
           <label class="field-label" style="margin-top:22px;">Mark who actually played a day</label>
           <div class="day-grid" id="actualDayGrid"></div>
@@ -2213,6 +2246,31 @@
         else { adminSelected.add(idx); chip.classList.add('selected'); }
       });
       adminDayGrid.appendChild(chip);
+    });
+
+    const unblockDayGrid = document.getElementById('unblockDayGrid');
+    weekDays.forEach((d, idx) => {
+      const chip = document.createElement('div');
+      chip.className = 'day-chip admin-select';
+      chip.innerHTML = `<span class="dow">${DOW[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>`;
+      chip.addEventListener('click', () => {
+        if (unblockedDays.includes(idx)) unblockedDays = unblockedDays.filter(x => x !== idx);
+        else unblockedDays = unblockedDays.concat(idx);
+        chip.classList.toggle('selected', unblockedDays.includes(idx));
+      });
+      unblockDayGrid.appendChild(chip);
+    });
+
+    document.getElementById('saveUnblockBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('unblockStatusMsg');
+      msg.textContent = 'Saving...';
+      try {
+        await saveUnblockedDays(unblockedDays);
+        msg.textContent = 'Saved.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
     });
 
     document.getElementById('saveClosedBtn').addEventListener('click', async () => {
@@ -2361,6 +2419,12 @@
       chip.classList.toggle('closed-chip', false);
       chip.style.borderColor = hasActual ? 'var(--ball-yellow-dim)' : '';
       chip.style.opacity = hasActual ? '1' : '';
+    });
+  }
+
+  function renderAdminUnblockedPicker() {
+    document.querySelectorAll('#unblockDayGrid .day-chip').forEach((chip, idx) => {
+      chip.classList.toggle('selected', unblockedDays.includes(idx));
     });
   }
 
