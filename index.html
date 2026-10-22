@@ -547,7 +547,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.16</div>
+  <div class="version-tag">v4.17</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -2330,11 +2330,16 @@
       </div>`;
 
     const chipGrid = document.getElementById('actualPlayerChips');
-    PLAYERS.forEach(name => {
+    // Roster plus any subs who responded this week (and anyone already
+    // recorded for this day), so subs can be marked as having played.
+    const actualNamesList = [...PLAYERS];
+    lastResponses.forEach(r => { if (!actualNamesList.includes(r.name)) actualNamesList.push(r.name); });
+    actualEditSelected.forEach(n => { if (!actualNamesList.includes(n)) actualNamesList.push(n); });
+    actualNamesList.forEach(name => {
       const chip = document.createElement('div');
       chip.className = 'day-chip admin-select';
       chip.style.padding = '10px 4px';
-      chip.innerHTML = `<span class="dnum" style="font-size:13px;">${escapeHtml(name)}</span>`;
+      chip.innerHTML = `<span class="dnum" style="font-size:13px;">${escapeHtml(name)}${PLAYERS.includes(name) ? '' : ' (sub)'}</span>`;
       chip.classList.toggle('selected', actualEditSelected.has(name));
       chip.addEventListener('click', () => {
         if (actualEditSelected.has(name)) { actualEditSelected.delete(name); chip.classList.remove('selected'); }
