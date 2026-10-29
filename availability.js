@@ -109,7 +109,7 @@ export default async (req, context) => {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const week = url.searchParams.get("week");
-  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments", "getEarlyWarningConfig", "setEarlyWarningConfig", "getRotationMode", "setRotationMode"];
+  const weekExemptActions = ["subscribe", "addPlayer", "removePlayer", "getPayments", "setPayments", "getEarlyWarningConfig", "setEarlyWarningConfig", "getRotationMode", "setRotationMode", "setAbsence", "clearAbsence"];
   if (!week && !weekExemptActions.includes(action)) return json({ error: "missing week" }, 400);
 
   const store = getStore({ name: "tennis-availability", consistency: "strong" });
