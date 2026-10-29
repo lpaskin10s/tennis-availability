@@ -312,6 +312,24 @@
 
     // ---- Sandbox state (pure in-memory, never sent anywhere) ----
     let players = []; // { name, days:[0..4], out, isSub, maxstreak, maxweekly, isAdHoc }
+
+  // Admin-set extended absences are date-based: a player is unavailable on
+  // any weekday inside [from, to] (blank `to` = until removed). Mirrors the
+  // live board in index.html.
+  function stripAbsentDays(responses, weekKey, absences) {
+    if (!absences || Object.keys(absences).length === 0) return responses;
+    const start = new Date(weekKey + 'T00:00:00');
+    const isoOf = (idx) => {
+      const d = new Date(start); d.setDate(start.getDate() + idx + 2);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    return responses.map(r => {
+      const a = absences[r.name];
+      if (!a) return r;
+      return { ...r, days: r.days.filter(i => { const iso = isoOf(i); return !(a.from <= iso && (!a.to || iso <= a.to)); }) };
+    });
+  }
+
     let closedDays = [];
     let actualResults = {};
     let lastCopy = null;
@@ -341,6 +359,7 @@
           preferredDays: Array.isArray(r.preferredDays) ? [...r.preferredDays] : [],
           isAdHoc: false
         }));
+        players = stripAbsentDays(players, weekKey, listData.absences);
         // Include anyone on the roster who hasn't responded yet, so the
         // sandbox reflects "what if they became available" without having
         // to manually re-add them.

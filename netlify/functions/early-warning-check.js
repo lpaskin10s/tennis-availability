@@ -80,6 +80,7 @@ export default async () => {
     if (val) responses.push(val);
   }
   const closedDays = (await store.get(`closed:${weekKey}`, { type: "json" })) || [];
+  const absences = (await store.get("absences", { type: "json" })) || {};
 
   const todayDateOnly = new Date(today);
   todayDateOnly.setHours(0, 0, 0, 0);
@@ -98,7 +99,10 @@ export default async () => {
 
     // Raw headcount only — this deliberately doesn't replicate the caps/
     // fairness logic the live scheduler uses, to keep this simple and low-risk.
-    const available = responses.filter((r) => !r.out && r.days.includes(idx));
+    // Extended absences (date-based) count as unavailable, same as the live board.
+    const dayIso = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, "0")}-${String(dayDate.getDate()).padStart(2, "0")}`;
+    const isAway = (name) => { const a = absences[name]; return !!a && a.from <= dayIso && (!a.to || dayIso <= a.to); };
+    const available = responses.filter((r) => !r.out && r.days.includes(idx) && !isAway(r.name));
     if (available.length >= 4) continue;
 
     // Only warn once per day per week, even if the configured slot somehow triggers more than once.

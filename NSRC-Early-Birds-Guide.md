@@ -31,6 +31,9 @@ A quick reference for everyone in the group, plus a separate section for the adm
 ### Confirmed days are locked for late arrivals
 - Once the admin has marked a day as confirmed (recording its lineup), that day shows **FULL** and can't be selected by anyone who didn't already have that day in their saved availability — that includes people who haven't responded yet and people who responded without that day. Anyone who had the day can still edit the rest of their entry, and the admin can open a day back up (see the admin section).
 
+### Extended absences
+- If you'll be away for a while, tell the admin. They can mark you away from a date (optionally until a date), and you'll show as **AWAY** on the board and be skipped every week automatically — nothing to fill in. Your day buttons show AWAY for those days. When you're back, the admin presses **Back** and you're available again from that day.
+
 ### Reading the board
 - **Scoreboard table:** shows everyone's marked days at a glance.
 - **Once you've picked your name**, it's highlighted throughout the board — your row in the scoreboard, and your name wherever it appears in the lineup below — so you can spot "am I actually playing this week?" at a glance without reading every line. This is layered on top of the shared view, not a replacement for it — everyone still sees the same full board regardless of whose name is selected.
@@ -131,6 +134,11 @@ This has to be done once per device/person — sharing the admin link with a co-
 
 **Mark club-closed days**
 - Select any day(s) the club itself is closed. That day is fully excluded from scheduling — no lineup gets built for it, and it doesn't count against anyone's weekly limit or streak.
+
+**Extended absences**
+- Under *Extended absences*, pick a player, set **Away from** (defaults to today) and an optional **Until** date, then save. Leave *Until* blank for open-ended.
+- Everyone currently away is listed with **Edit** and **Back**. **Back** makes the player available again starting today (earlier days stay away); an absence that hasn't started yet is simply removed.
+- Away days are treated as unavailable everywhere: the board, the lineup, the "Still waiting on" banner, the Sunday early-warning headcount, Season Stats projections and Demand Patterns. Days with a recorded result are unaffected. No notifications are sent. Players can't override this themselves.
 
 **Open confirmed days to late sign-ups**
 - Days you've marked as confirmed are locked for anyone who didn't already have that day saved (including people who haven't responded and people who responded without it). A day that merely has 4+ people available is not locked. Highlight a day here and save to unlock it for everyone this week; un-highlight and save to lock it again. Admin mode itself is never locked out, so you can always enter or edit anyone's response.

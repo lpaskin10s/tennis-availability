@@ -102,7 +102,7 @@
   <h1>Season Stats</h1>
   <div class="sub" id="seasonRangeLabel">—</div>
   <div class="season-nav" id="seasonNav" style="margin-top:10px;"></div>
-  <div class="version-tag">v2.3</div>
+  <div class="version-tag">v2.4</div>
 </div>
 
 <div class="wrap">
@@ -188,6 +188,24 @@
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
+  }
+
+
+  // Admin-set extended absences are date-based: a player is unavailable on
+  // any weekday inside [from, to] (blank `to` = until removed). Mirrors the
+  // live board in index.html.
+  function stripAbsentDays(responses, weekKey, absences) {
+    if (!absences || Object.keys(absences).length === 0) return responses;
+    const start = new Date(weekKey + 'T00:00:00');
+    const isoOf = (idx) => {
+      const d = new Date(start); d.setDate(start.getDate() + idx + 2);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    return responses.map(r => {
+      const a = absences[r.name];
+      if (!a) return r;
+      return { ...r, days: r.days.filter(i => { const iso = isoOf(i); return !(a.from <= iso && (!a.to || iso <= a.to)); }) };
+    });
   }
 
   async function fetchWeek(weekKey) {
@@ -429,7 +447,7 @@
         return;
       }
       realWeeksCount++;
-      const { tally: weekTally, dayTally: weekDayTally } = tallyWeek(wk, data.responses || [], data.closedDays || [], data.actualResults || {}, players, today, rotationMode);
+      const { tally: weekTally, dayTally: weekDayTally } = tallyWeek(wk, stripAbsentDays(data.responses || [], wk, data.absences), data.closedDays || [], data.actualResults || {}, players, today, rotationMode);
       Object.entries(weekTally).forEach(([name, count]) => {
         realTally[name] = (realTally[name] || 0) + count;
       });

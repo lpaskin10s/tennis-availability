@@ -137,8 +137,9 @@ export default async (req, context) => {
     const closedDays = (await store.get(`closed:${week}`, { type: "json" })) || [];
     const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
     const unblockedDays = (await store.get(`unblocked:${week}`, { type: "json" })) || [];
+    const absences = (await store.get("absences", { type: "json" })) || {};
     const players = await getPlayers(store);
-    return json({ responses, closedDays, actualResults, players, unblockedDays });
+    return json({ responses, closedDays, actualResults, players, unblockedDays, absences });
   }
 
   if (action === "save") {
@@ -210,6 +211,34 @@ export default async (req, context) => {
     const p = url.searchParams.get("unblockedDays") || "";
     const days = p ? p.split(",").filter((x) => x !== "").map(Number) : [];
     await store.setJSON(`unblocked:${week}`, days);
+    return json({ ok: true });
+  }
+
+  if (action === "setAbsence") {
+    // Admin-only. One extended absence per player, tracked by calendar day:
+    // away from `from` through `to` (blank `to` = until removed). Pressing
+    // "Back" just sets `to` to yesterday, so they're available again from today.
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const name = (url.searchParams.get("name") || "").trim();
+    const from = url.searchParams.get("from") || "";
+    const to = url.searchParams.get("to") || "";
+    const dateOk = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!name || !dateOk(from) || (to && !dateOk(to))) return json({ error: "bad request" }, 400);
+    const absences = (await store.get("absences", { type: "json" })) || {};
+    if (to && to < from) delete absences[name]; // ended before it began = removed
+    else absences[name] = { from, to: to || null };
+    await store.setJSON("absences", absences);
+    return json({ ok: true });
+  }
+
+  if (action === "clearAbsence") {
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    const name = (url.searchParams.get("name") || "").trim();
+    const absences = (await store.get("absences", { type: "json" })) || {};
+    delete absences[name];
+    await store.setJSON("absences", absences);
     return json({ ok: true });
   }
 

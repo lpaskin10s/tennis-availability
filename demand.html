@@ -115,7 +115,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>Demand Patterns</h1>
   <div class="sub" id="rangeLabel">—</div>
-  <div class="version-tag">v1.0</div>
+  <div class="version-tag">v1.1</div>
 </div>
 
 <div class="wrap">
@@ -145,6 +145,24 @@
     const daysSinceSaturday = (d.getDay() + 1) % 7;
     d.setDate(d.getDate() - daysSinceSaturday);
     return d;
+  }
+
+
+  // Admin-set extended absences are date-based: a player is unavailable on
+  // any weekday inside [from, to] (blank `to` = until removed). Mirrors the
+  // live board in index.html.
+  function stripAbsentDays(responses, weekKey, absences) {
+    if (!absences || Object.keys(absences).length === 0) return responses;
+    const start = new Date(weekKey + 'T00:00:00');
+    const isoOf = (idx) => {
+      const d = new Date(start); d.setDate(start.getDate() + idx + 2);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    return responses.map(r => {
+      const a = absences[r.name];
+      if (!a) return r;
+      return { ...r, days: r.days.filter(i => { const iso = isoOf(i); return !(a.from <= iso && (!a.to || iso <= a.to)); }) };
+    });
   }
 
   async function fetchWeek(weekKey) {
@@ -189,7 +207,7 @@
     weekStarts.forEach((ws, wi) => {
       const data = weekDataList[wi];
       if (!data) return;
-      const responses = data.responses || [];
+      const responses = stripAbsentDays(data.responses || [], isoDate(weekStarts[wi]), data.absences);
       const closedDays = data.closedDays || [];
       const hasAnyData = responses.length > 0 || closedDays.length > 0;
       if (!hasAnyData) return;

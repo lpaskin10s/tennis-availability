@@ -547,7 +547,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.17</div>
+  <div class="version-tag">v4.18</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -561,6 +561,7 @@
     </select>
     <input type="text" id="subNameInput" placeholder="Sub's name" style="display:none;">
     <div id="personalSnapshotSlot"></div>
+    <div id="awayNote" class="missing-note" style="display:none;"></div>
 
     <label class="field-label">Days you can play this week</label>
     <div class="day-grid" id="dayGrid"></div>
@@ -814,6 +815,7 @@
 
   let closedDays = [];
   let unblockedDays = [];
+  let absences = {}; // { name: { from:'YYYY-MM-DD', to:'YYYY-MM-DD'|null } } — admin-set extended absences
   let actualResults = {};
   let lastDayPlans = [];
   let didInitialPopulate = false;
@@ -884,7 +886,7 @@
   }
 
   function toggleDay(idx, chip) {
-    if (isOut || closedDays.includes(idx) || lockedForCurrentUser(idx)) return;
+    if (isOut || closedDays.includes(idx) || awayForCurrentUser(idx) || lockedForCurrentUser(idx)) return;
     if (selected.has(idx)) {
       selected.delete(idx);
       chip.classList.remove('selected');
@@ -913,18 +915,31 @@
     return !!(plan && !plan.closed && plan.isActual && plan.playing.length >= 4);
   }
 
+  function awayForCurrentUser(idx) {
+    const name = nameSelect.value && nameSelect.value !== '__sub__' ? nameSelect.value : '';
+    return !!name && absentOn(name, idx);
+  }
+
   function applyClosedDaysToPicker() {
+    const noteEl = document.getElementById('awayNote');
+    const who = nameSelect.value && nameSelect.value !== '__sub__' ? nameSelect.value : '';
+    if (noteEl) {
+      const anyAway = who && weekDays.some((d, i) => absentOn(who, i));
+      noteEl.style.display = anyAway ? 'block' : 'none';
+      noteEl.textContent = anyAway ? `You're marked away (${absenceLabel(who).replace('away ', '')}) — the admin manages this, so you don't need to fill anything in for those days.` : '';
+    }
     dayChips.forEach((chip, idx) => {
       const closed = closedDays.includes(idx);
-      const locked = !closed && lockedForCurrentUser(idx);
-      chip.classList.toggle('closed-chip', closed || locked);
-      chip.title = locked ? "Lineup is set for this day. Ask Lewis if you'd like to be added." : '';
-      if (closed || locked) {
+      const away = !closed && awayForCurrentUser(idx);
+      const locked = !closed && !away && lockedForCurrentUser(idx);
+      chip.classList.toggle('closed-chip', closed || locked || away);
+      chip.title = away ? "You're marked away for this day (set by the admin)." : (locked ? "Lineup is set for this day. Ask Lewis if you'd like to be added." : '');
+      if (closed || locked || away) {
         selected.delete(idx);
         preferredDays.delete(idx);
         chip.classList.remove('selected');
         chip.setAttribute('aria-checked', 'false');
-        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${closed ? 'CLOSED' : 'FULL'}</span>`;
+        chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${closed ? 'CLOSED' : (away ? 'AWAY' : 'FULL')}</span>`;
       } else {
         chip.innerHTML = `<span class="dow">${DOW[weekDays[idx].getDay()]}</span><span class="dnum">${weekDays[idx].getDate()}</span>`;
       }
@@ -980,7 +995,7 @@
       setOutState(true);
     } else {
       existing.days.forEach(idx => {
-        if (closedDays.includes(idx) || !dayChips[idx] || lockedForCurrentUser(idx)) return;
+        if (closedDays.includes(idx) || !dayChips[idx] || awayForCurrentUser(idx) || lockedForCurrentUser(idx)) return;
         selected.add(idx);
         dayChips[idx].classList.add('selected');
         dayChips[idx].setAttribute('aria-checked', 'true');
@@ -1186,7 +1201,7 @@
       const res = await fetch(`${API_URL}?${params.toString()}`);
       if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [], unblockedDays: data.unblockedDays || [], actualResults: data.actualResults || {}, players: data.players || null, ok: true };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], unblockedDays: data.unblockedDays || [], absences: data.absences || {}, actualResults: data.actualResults || {}, players: data.players || null, ok: true };
     } catch (e) {
       return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
     }
@@ -1669,7 +1684,40 @@
     ).join(', ');
   }
 
+  // ---- Extended absences (admin-set, date-based) ----
+  function isoLocal(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function absentOn(name, idx) {
+    const a = absences[name];
+    if (!a || !weekDays[idx]) return false;
+    const iso = isoLocal(weekDays[idx]);
+    return a.from <= iso && (!a.to || iso <= a.to);
+  }
+  // Returns responses with away days removed, plus a row for anyone who is
+  // away this week but never submitted (so they show as AWAY, not "missing").
+  function applyAbsences(responses) {
+    const mapped = responses.map(r => {
+      const awayDays = weekDays.map((d, i) => i).filter(i => absentOn(r.name, i));
+      if (awayDays.length === 0) return r;
+      return { ...r, days: r.days.filter(i => !awayDays.includes(i)), awayDays };
+    });
+    PLAYERS.forEach(name => {
+      if (mapped.some(r => r.name === name)) return;
+      const awayDays = weekDays.map((d, i) => i).filter(i => absentOn(name, i));
+      if (awayDays.length > 0) mapped.push({ name, days: [], out: false, note: '', isSub: false, awayDays, synthetic: true });
+    });
+    return mapped;
+  }
+  function absenceLabel(name) {
+    const a = absences[name];
+    if (!a) return '';
+    const fmt = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${m}/${d}`; };
+    return a.to ? `away ${fmt(a.from)}–${fmt(a.to)}` : `away since ${fmt(a.from)}`;
+  }
+
   function renderBoard(responses) {
+    responses = applyAbsences(responses);
     const tbody = document.getElementById('tbody');
     const countRow = document.getElementById('countRow');
     const stampRow = document.getElementById('stampRow');
@@ -1701,11 +1749,13 @@
         const has = r.days.includes(idx);
         return `<td>${has ? '<span class="mark-yes">●</span>' : '<span class="mark-no">—</span>'}</td>`;
       }).join('');
+      const openDays = weekDays.map((d, i) => i).filter(i => !closedDays.includes(i));
+      const fullyAway = !!r.awayDays && openDays.every(i => r.awayDays.includes(i));
       const nameCell = r.out
         ? `${escapeHtml(r.name)}<span class="out-badge">OUT</span>`
-        : escapeHtml(r.name);
+        : (r.awayDays ? `${escapeHtml(r.name)}<span class="out-badge" title="${escapeHtml(absenceLabel(r.name))}">AWAY</span>` : escapeHtml(r.name));
       const isSelf = selectedName && r.name === selectedName;
-      const rowClasses = [r.out ? 'is-out' : '', isSelf ? 'is-self' : ''].filter(Boolean).join(' ');
+      const rowClasses = [(r.out || fullyAway) ? 'is-out' : '', isSelf ? 'is-self' : ''].filter(Boolean).join(' ');
       return `<tr class="${rowClasses}"><td class="name-col">${nameCell}</td>${cells}<td class="note-cell">${escapeHtml(r.note || '')}</td></tr>`;
     }).join('');
 
@@ -1984,13 +2034,14 @@
     }
     closedDays = data.closedDays;
     unblockedDays = data.unblockedDays || [];
+    absences = data.absences || {};
     actualResults = data.actualResults;
     lastResponses = data.responses;
     renderNameOptions();
     applyClosedDaysToPicker();
     renderBoard(data.responses);
     applyClosedDaysToPicker(); // again: lineup (lastDayPlans) is only fresh after renderBoard
-    if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); renderAdminUnblockedPicker(); }
+    if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); renderAdminUnblockedPicker(); renderAdminAbsences(); }
     if (tag) tag.textContent = `Updated ${timeLabel}`;
     if (!didInitialPopulate && nameSelect.value) {
       populateFormForName(nameSelect.value);
@@ -2114,6 +2165,17 @@
           <div class="day-grid" id="unblockDayGrid"></div>
           <button class="primary admin-btn" id="saveUnblockBtn">Save late sign-up days</button>
           <div class="status-msg admin-status" id="unblockStatusMsg"></div>
+
+          <label class="field-label" style="margin-top:22px;">Extended absences <span style="color:var(--net-gray); text-transform:none; font-weight:400;">(away players are marked unavailable every week until they're back)</span></label>
+          <div id="absenceList"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+            <select id="absPlayer"></select>
+            <span></span>
+            <label style="font-size:11px;color:var(--net-gray);">Away from<input type="date" id="absFrom"></label>
+            <label style="font-size:11px;color:var(--net-gray);">Until (optional)<input type="date" id="absTo"></label>
+          </div>
+          <button class="primary admin-btn" id="saveAbsenceBtn" style="margin-top:8px;">Save absence</button>
+          <div class="status-msg admin-status" id="absenceStatusMsg"></div>
 
           <label class="field-label" style="margin-top:22px;">Mark who actually played a day</label>
           <div class="day-grid" id="actualDayGrid"></div>
@@ -2263,6 +2325,21 @@
         chip.classList.toggle('selected', unblockedDays.includes(idx));
       });
       unblockDayGrid.appendChild(chip);
+    });
+
+    document.getElementById('saveAbsenceBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('absenceStatusMsg');
+      const name = document.getElementById('absPlayer').value;
+      const from = document.getElementById('absFrom').value;
+      const to = document.getElementById('absTo').value;
+      if (!name || !from) { msg.textContent = 'Pick a player and a start date.'; return; }
+      msg.textContent = 'Saving...';
+      try {
+        await postAbsence('setAbsence', { name, from, to });
+        msg.textContent = 'Saved.';
+        document.getElementById('absTo').value = '';
+        await refresh();
+      } catch (e) { msg.textContent = 'Error: ' + e.message; }
     });
 
     document.getElementById('saveUnblockBtn').addEventListener('click', async () => {
@@ -2429,6 +2506,56 @@
       chip.style.borderColor = hasActual ? 'var(--ball-yellow-dim)' : '';
       chip.style.opacity = hasActual ? '1' : '';
     });
+  }
+
+  async function postAbsence(action, params) {
+    const p = new URLSearchParams({ action, key: adminKey, ...params });
+    const res = await fetch(`${API_URL}?${p.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+
+  function renderAdminAbsences() {
+    const list = document.getElementById('absenceList');
+    const sel = document.getElementById('absPlayer');
+    if (!list || !sel) return;
+    const todayIso = isoLocal(new Date());
+    if (sel.options.length !== PLAYERS.length) {
+      sel.innerHTML = PLAYERS.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    }
+    const fromEl = document.getElementById('absFrom');
+    if (!fromEl.value) fromEl.value = todayIso;
+    const active = Object.entries(absences).filter(([n, a]) => !a.to || a.to >= todayIso).sort((a, b) => a[0].localeCompare(b[0]));
+    list.innerHTML = active.length === 0
+      ? '<div style="font-size:12px;color:var(--net-gray);">Nobody is marked away.</div>'
+      : active.map(([n, a]) => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;">
+          <span style="flex:1;"><strong>${escapeHtml(n)}</strong> — ${escapeHtml(absenceLabel(n))}${a.from > todayIso ? ' (upcoming)' : ''}</span>
+          <button class="link-btn" data-edit-abs="${escapeHtml(n)}">Edit</button>
+          <button class="link-btn" data-back-abs="${escapeHtml(n)}">Back</button>
+        </div>`).join('');
+    list.querySelectorAll('[data-edit-abs]').forEach(b => b.addEventListener('click', () => {
+      const n = b.dataset.editAbs;
+      sel.value = n;
+      fromEl.value = absences[n].from;
+      document.getElementById('absTo').value = absences[n].to || '';
+    }));
+    list.querySelectorAll('[data-back-abs]').forEach(b => b.addEventListener('click', async () => {
+      const n = b.dataset.backAbs;
+      const msg = document.getElementById('absenceStatusMsg');
+      const a = absences[n];
+      msg.textContent = 'Saving...';
+      try {
+        // "Back" = available again from today. An absence that hasn't started yet is simply removed.
+        if (a.from >= todayIso) await postAbsence('clearAbsence', { name: n });
+        else {
+          const y = new Date(); y.setDate(y.getDate() - 1);
+          await postAbsence('setAbsence', { name: n, from: a.from, to: isoLocal(y) });
+        }
+        msg.textContent = `${n} is back.`;
+        await refresh();
+      } catch (e) { msg.textContent = 'Error: ' + e.message; }
+    }));
   }
 
   function renderAdminUnblockedPicker() {
