@@ -138,8 +138,9 @@ export default async (req, context) => {
     const actualResults = (await store.get(`actual:${week}`, { type: "json" })) || {};
     const unblockedDays = (await store.get(`unblocked:${week}`, { type: "json" })) || [];
     const absences = (await store.get("absences", { type: "json" })) || {};
+    const published = !!(await store.get(`published:${week}`, { type: "json" }));
     const players = await getPlayers(store);
-    return json({ responses, closedDays, actualResults, players, unblockedDays, absences });
+    return json({ responses, closedDays, actualResults, players, unblockedDays, absences, published });
   }
 
   if (action === "save") {
@@ -211,6 +212,15 @@ export default async (req, context) => {
     const p = url.searchParams.get("unblockedDays") || "";
     const days = p ? p.split(",").filter((x) => x !== "").map(Number) : [];
     await store.setJSON(`unblocked:${week}`, days);
+    return json({ ok: true });
+  }
+
+  if (action === "setPublished") {
+    // Admin-only: show (or hide again) this week's matchups to players before
+    // everyone has responded. Stored per week, so it resets on its own.
+    const key = url.searchParams.get("key");
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return json({ error: "unauthorized" }, 403);
+    await store.setJSON(`published:${week}`, url.searchParams.get("value") === "true");
     return json({ ok: true });
   }
 

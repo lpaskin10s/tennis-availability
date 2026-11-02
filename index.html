@@ -547,7 +547,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.19</div>
+  <div class="version-tag">v4.20</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -815,6 +815,8 @@
 
   let closedDays = [];
   let unblockedDays = [];
+  let published = false; // admin has released this week's matchups early
+  let scheduleHidden = false;
   let absences = {}; // { name: { from:'YYYY-MM-DD', to:'YYYY-MM-DD'|null } } — admin-set extended absences
   let actualResults = {};
   let lastDayPlans = [];
@@ -1019,8 +1021,8 @@
     todayDateOnly.setHours(0, 0, 0, 0);
     const NEXT_DAY_CUTOFF_HOUR = 9;
 
-    let nextDayLabel = 'None confirmed yet';
-    for (const plan of lastDayPlans) {
+    let nextDayLabel = scheduleHidden ? 'Pending — waiting on responses' : 'None confirmed yet';
+    for (const plan of (scheduleHidden ? [] : lastDayPlans)) {
       if (plan.closed || plan.playing.length < 4) continue;
       if (!plan.playing.some(r => r.name === name)) continue;
       const d = weekDays[plan.idx];
@@ -1201,7 +1203,7 @@
       const res = await fetch(`${API_URL}?${params.toString()}`);
       if (!res.ok) return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
       const data = await res.json();
-      return { responses: data.responses || [], closedDays: data.closedDays || [], unblockedDays: data.unblockedDays || [], absences: data.absences || {}, actualResults: data.actualResults || {}, players: data.players || null, ok: true };
+      return { responses: data.responses || [], closedDays: data.closedDays || [], unblockedDays: data.unblockedDays || [], absences: data.absences || {}, published: !!data.published, actualResults: data.actualResults || {}, players: data.players || null, ok: true };
     } catch (e) {
       return { responses: [], closedDays: [], actualResults: {}, players: null, ok: false };
     }
@@ -1732,6 +1734,13 @@
       ? `<div class="missing-note ok">Everyone's responded! ✅</div>`
       : `<div class="missing-note">Still waiting on: ${escapeHtml(missing.join(', '))}</div>`;
 
+    // Matchups stay hidden from players while the week is still filling in
+    // (Saturday/Sunday only): until everyone has responded, or the admin
+    // releases them. From Monday on they always show. Admin always sees them.
+    const mondayStart = new Date(weekDays[0]); mondayStart.setHours(0, 0, 0, 0);
+    scheduleHidden = !isAdmin && !published && missing.length > 0 && new Date() < mondayStart;
+    const adminHoldNote = (isAdmin && !published && missing.length > 0 && new Date() < mondayStart);
+
     if (responses.length === 0 && closedDays.length === 0) {
       scoreboard.style.display = 'none';
       emptyState.style.display = 'block';
@@ -1769,7 +1778,9 @@
 
     const dayPlans = assignFairly(responses, rotationMode);
 
-    stampRow.innerHTML = '<td class="name-col"></td>' +
+    lastDayPlans = dayPlans;
+    stampRow.innerHTML = scheduleHidden ? '<td class="name-col"></td>' + dayPlans.map(() => '<td></td>').join('') + '<td></td>' :
+      '<td class="name-col"></td>' +
       dayPlans.map(plan => {
         if (plan.closed) {
           return `<td><span class="stamp closed">CLOSED</span><span class="count-sub">club closed</span></td>`;
@@ -1930,10 +1941,28 @@
       ? `Games this week — ${Object.entries(playCountTotal).map(([n, c]) => `${escapeHtml(n)}: ${c}`).join(' · ')}`
       : 'No day has 4 people yet — need more responses to fill the court.';
 
+    if (scheduleHidden) {
+      bestBannerSlot.innerHTML = `<div class="best-banner">
+        <div class="ball"></div>
+        <div style="flex:1;">
+          <div class="txt-main">Lineup not set yet</div>
+          <div class="txt-sub">Matchups appear once everyone has responded (still waiting on ${escapeHtml(missing.join(', '))}) — check back after that.</div>
+        </div>
+      </div>`;
+      return;
+    }
+
+    const adminHoldHtml = isAdmin && (adminHoldNote || published) ? `
+          <div class="txt-sub" style="margin-bottom:6px;color:var(--ball-yellow-dim);">${published
+            ? 'You released this lineup to players early.'
+            : `Players can't see this yet — still waiting on ${escapeHtml(missing.join(', '))}.`}
+            <button type="button" class="small-btn" id="togglePublishBtn">${published ? 'Hide from players' : 'Generate schedule (show players)'}</button></div>` : '';
+
     bestBannerSlot.innerHTML = `<div class="best-banner">
         <div class="ball"></div>
         <div style="flex:1;">
           <div class="txt-main">This week's lineup</div>
+          ${adminHoldHtml}
           ${dayLines}
           ${pastLinesHtml}
           <div class="txt-sub" style="margin-top:8px;color:var(--net-gray);">${balanceNote}</div>
@@ -1942,7 +1971,17 @@
         </div>
       </div>`;
 
-    lastDayPlans = dayPlans;
+    const pubBtn = document.getElementById('togglePublishBtn');
+    if (pubBtn) pubBtn.addEventListener('click', async () => {
+      pubBtn.disabled = true;
+      try {
+        const p = new URLSearchParams({ action: 'setPublished', week: weekKey, key: adminKey, value: published ? 'false' : 'true' });
+        const res = await fetch(`${API_URL}?${p.toString()}`);
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error || 'failed');
+        await refresh();
+      } catch (e) { pubBtn.disabled = false; pubBtn.textContent = 'Error — try again'; }
+    });
 
     bestBannerSlot.querySelectorAll('.add-cal-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2035,6 +2074,7 @@
     closedDays = data.closedDays;
     unblockedDays = data.unblockedDays || [];
     absences = data.absences || {};
+    published = !!data.published;
     actualResults = data.actualResults;
     lastResponses = data.responses;
     renderNameOptions();
@@ -2042,6 +2082,7 @@
     renderBoard(data.responses);
     applyClosedDaysToPicker(); // again: lineup (lastDayPlans) is only fresh after renderBoard
     if (isAdmin) { renderAdminClosedPicker(); renderAdminActualPicker(); renderAdminUnblockedPicker(); renderAdminAbsences(); }
+    renderPersonalSnapshot(nameSelect.value);
     if (tag) tag.textContent = `Updated ${timeLabel}`;
     if (!didInitialPopulate && nameSelect.value) {
       populateFormForName(nameSelect.value);

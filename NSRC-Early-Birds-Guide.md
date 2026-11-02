@@ -31,6 +31,10 @@ A quick reference for everyone in the group, plus a separate section for the adm
 ### Confirmed days are locked for late arrivals
 - Once the admin has marked a day as confirmed (recording its lineup), that day shows **FULL** and can't be selected by anyone who didn't already have that day in their saved availability — that includes people who haven't responded yet and people who responded without that day. Anyone who had the day can still edit the rest of their entry, and the admin can open a day back up (see the admin section).
 
+### Lineup held back until everyone responds
+- On Saturday and Sunday, while the week is still filling in, players don't see the matchups (the IN/OUT stamps, "This week's lineup" and "Next confirmed day"). Instead they see "Lineup not set yet" and who we're still waiting on. The scoreboard of who's available stays visible.
+- The lineup appears automatically once every roster player has responded (people marked away count as responded), or as soon as the admin releases it. From Monday on it always shows, so a missing response can never hide it during the week.
+
 ### Extended absences
 - If you'll be away for a while, tell the admin. They can mark you away from a date (optionally until a date), and you'll show as **AWAY** on the board and be skipped every week automatically — nothing to fill in. Your day buttons show AWAY for those days. When you're back, the admin presses **Back** and you're available again from that day.
 
@@ -134,6 +138,9 @@ This has to be done once per device/person — sharing the admin link with a co-
 
 **Mark club-closed days**
 - Select any day(s) the club itself is closed. That day is fully excluded from scheduling — no lineup gets built for it, and it doesn't count against anyone's weekly limit or streak.
+
+**Generate schedule (release the lineup early)**
+- Admins always see the lineup. While it's being held back from players, a note above it says who we're still waiting on, with a **Generate schedule (show players)** button. Press it to release the lineup to everyone; **Hide from players** takes it back. It's saved per week and resets with the new week.
 
 **Extended absences**
 - Under *Extended absences*, pick a player, set **Away from** (defaults to today) and an optional **Until** date, then save. Leave *Until* blank for open-ended.
