@@ -547,7 +547,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.20</div>
+  <div class="version-tag">v4.21</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1707,7 +1707,10 @@
     PLAYERS.forEach(name => {
       if (mapped.some(r => r.name === name)) return;
       const awayDays = weekDays.map((d, i) => i).filter(i => absentOn(name, i));
-      if (awayDays.length > 0) mapped.push({ name, days: [], out: false, note: '', isSub: false, awayDays, synthetic: true });
+      // Only count someone as "responded" on the strength of an absence if they're
+      // away for every open day this week; a partial absence still needs their answer.
+      const openDays = weekDays.map((d, i) => i).filter(i => !closedDays.includes(i));
+      if (awayDays.length > 0 && openDays.every(i => awayDays.includes(i))) mapped.push({ name, days: [], out: false, note: '', isSub: false, awayDays, synthetic: true });
     });
     return mapped;
   }

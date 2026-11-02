@@ -33,7 +33,7 @@ A quick reference for everyone in the group, plus a separate section for the adm
 
 ### Lineup held back until everyone responds
 - On Saturday and Sunday, while the week is still filling in, players don't see the matchups (the IN/OUT stamps, "This week's lineup" and "Next confirmed day"). Instead they see "Lineup not set yet" and who we're still waiting on. The scoreboard of who's available stays visible.
-- The lineup appears automatically once every roster player has responded (people marked away count as responded), or as soon as the admin releases it. From Monday on it always shows, so a missing response can never hide it during the week.
+- The lineup appears automatically once every roster player has responded (people marked out for the week, or away for every day of it, count as responded; someone away for only part of the week still needs to respond), or as soon as the admin releases it. From Monday on it always shows, so a missing response can never hide it during the week.
 
 ### Extended absences
 - If you'll be away for a while, tell the admin. They can mark you away from a date (optionally until a date), and you'll show as **AWAY** on the board and be skipped every week automatically — nothing to fill in. Your day buttons show AWAY for those days. When you're back, the admin presses **Back** and you're available again from that day.
