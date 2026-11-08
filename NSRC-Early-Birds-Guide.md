@@ -147,8 +147,8 @@ This has to be done once per device/person — sharing the admin link with a co-
 - Everyone currently away is listed with **Edit** and **Back**. **Back** makes the player available again starting today (earlier days stay away); an absence that hasn't started yet is simply removed.
 - Away days are treated as unavailable everywhere: the board, the lineup, the "Still waiting on" banner, the Sunday early-warning headcount, Season Stats projections and Demand Patterns. Days with a recorded result are unaffected. No notifications are sent. Players can't override this themselves.
 
-**Open confirmed days to late sign-ups**
-- Days you've marked as confirmed are locked for anyone who didn't already have that day saved (including people who haven't responded and people who responded without it). A day that merely has 4+ people available is not locked. Highlight a day here and save to unlock it for everyone this week; un-highlight and save to lock it again. Admin mode sees the same lock players do, so you can check it by picking a name; to add someone to a locked day, unlock that day here first.
+**Open a confirmed day to late sign-ups**
+- Days you've marked as confirmed are locked for anyone who didn't already have that day saved (including people who haven't responded and people who responded without it). A day that merely has 4+ people available is not locked. Days stay locked by default — a day is only unlocked if you highlight it here and save (highlighted = open to late sign-ups). Un-highlight and save to lock it again. Admin mode sees the same lock players do, so you can check it by picking a name; to add someone to a locked day, unlock that day here first.
 
 **Mark who actually played a day**
 - This is the important one: pick a day, check off who *really* played (which can differ from what the app projected — no-shows, subs, etc.), and save.
