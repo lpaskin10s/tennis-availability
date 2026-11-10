@@ -547,7 +547,7 @@
   <div class="eyebrow">Tennis Availability</div>
   <h1>NSRC Early Birds</h1>
   <div class="week-range" id="weekRange">—</div>
-  <div class="version-tag">v4.23</div>
+  <div class="version-tag">v4.24</div>
   <div id="adminPillSlot"></div>
 </div>
 
@@ -1231,8 +1231,9 @@
     if (!data.ok) throw new Error(data.error || 'Save failed');
   }
 
-  async function saveActualResult(dayIdx, players) {
+  async function saveActualResult(dayIdx, players, noGame) {
     const params = new URLSearchParams({ action: 'setActual', week: weekKey, key: adminKey, dayIdx: String(dayIdx), players: players.join(',') });
+    if (noGame) params.set('none', 'true');
     const res = await fetch(`${API_URL}?${params.toString()}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
@@ -1588,6 +1589,8 @@
       let bodyLine2 = '';
       if (plan.closed) {
         bodyLine1 = 'Club closed';
+      } else if (plan.isActual && plan.playing.length === 0) {
+        bodyLine1 = 'No game played';
       } else if (plan.playing.length >= 4) {
         const startLabel = getStartTime(plan);
         bodyLine1 = `${startLabel}–${END_TIME_LABEL}`;
@@ -1790,6 +1793,9 @@
           return `<td><span class="stamp closed">CLOSED</span><span class="count-sub">club closed</span></td>`;
         }
         const ok = plan.playing.length >= 4;
+        if (plan.isActual && plan.playing.length === 0) {
+          return `<td><span class="stamp out">NO GAME</span><span class="count-sub">not played</span></td>`;
+        }
         let sub;
         if (ok && plan.alternates.length > 0) {
           sub = 'sits out: ' + plan.alternates.map(r => r.name).join(', ');
@@ -1899,6 +1905,9 @@
       if (plan.closed) {
         return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">club closed</span></div>`;
       }
+      if (plan.isActual && plan.playing.length === 0) {
+        return `<div class="txt-sub">${dateLabel}: <span style="color:var(--clay)">no game played</span> <span style="color:var(--ball-yellow);">✓ confirmed</span></div>`;
+      }
       const whyBtn = selectedName ? ` <button type="button" class="small-btn explain-btn" data-idx="${plan.idx}">Why?</button>` : '';
       if (plan.playing.length >= 4) {
         const startLabel = getStartTime(plan);
@@ -1933,6 +1942,7 @@
           const dateLabel = `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
           let summary;
           if (plan.closed) summary = 'club closed';
+          else if (plan.isActual && plan.playing.length === 0) summary = 'no game played';
           else if (plan.playing.length >= 4) summary = plan.playing.map(r => r.name).join(', ');
           else if (plan.available.length === 0) summary = 'no one available';
           else summary = `only ${plan.available.length} available`;
@@ -2447,6 +2457,7 @@
       <div style="margin-top:10px;">
         <div class="day-grid" id="actualPlayerChips" style="grid-template-columns: repeat(4, 1fr);"></div>
         <button class="primary admin-btn" id="saveActualBtn" style="margin-top:10px;">Save actual result for this day</button>
+        <button class="primary admin-btn" id="noGameBtn" style="margin-top:8px;background:var(--panel);border:1px solid var(--clay);color:var(--chalk);">No game played this day</button>
         <button class="link-btn" id="clearActualBtn" style="display:block;margin-top:6px;">Clear recorded result (go back to projection)</button>
         <div class="status-msg admin-status" id="actualStatusMsg"></div>
       </div>`;
@@ -2476,6 +2487,18 @@
       try {
         await saveActualResult(actualEditDayIdx, Array.from(actualEditSelected));
         msg.textContent = 'Saved.';
+        await refresh();
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    document.getElementById('noGameBtn').addEventListener('click', async () => {
+      const msg = document.getElementById('actualStatusMsg');
+      msg.textContent = 'Saving...';
+      try {
+        await saveActualResult(actualEditDayIdx, [], true);
+        msg.textContent = 'Saved — marked as no game played.';
         await refresh();
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
