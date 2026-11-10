@@ -259,7 +259,11 @@ export default async (req, context) => {
     if (dayIdx === null) return json({ error: "missing dayIdx" }, 400);
     const playersParam = url.searchParams.get("players");
     const current = (await store.get(`actual:${week}`, { type: "json" })) || {};
-    if (playersParam === null || playersParam === "") {
+    if (url.searchParams.get("none") === "true") {
+      // "No game played": recorded as an empty list, so nobody is credited with
+      // a game and the day shows as not played (distinct from clearing it).
+      current[dayIdx] = [];
+    } else if (playersParam === null || playersParam === "") {
       delete current[dayIdx];
     } else {
       current[dayIdx] = playersParam.split(",").filter(Boolean);
